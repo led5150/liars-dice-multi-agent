@@ -12,7 +12,7 @@ with open(os.path.join(docs_dir, 'game_rules.txt'), 'r') as f:
   game_rules = f.read()
 
 
-DETAILED_SYSTEM_PROMPT = f"""You are an agent in a game of Liar's Dice.
+INFORMED_SYSTEM_PROMPT = f"""You are an agent in a game of Liar's Dice.
 Decide the next move in a game of Liar's Dice based on the current dice and gameplay history. 
 You can either call a die value and quantity or call the previous player's bluff.
 
@@ -39,47 +39,45 @@ You will be playing against three opponents, and will be given the history of ea
 # Example
 **Input:** 
 - Current dice: [2, 3, 5, 5, 6]
-- History: [{"player": 1, "face_value": 3, "quantity": 2}, {"player": 2, "face_value": 4, "quantity": 2}]
+- History: [{{"player": 1, "face_value": 3, "quantity": 2}}, {{"player": 2, "face_value": 4, "quantity": 2}}]
 
 **Output:**
-"""
 {{
   "face_value": 5,
   "quantity": 3,
   "bluff": False,
   "reasoning": "<reasoning for making this move>"
 }}
-"""
 
-# Notes
-- Consider edge cases, such as when very few dice are left in the game.
-- Factor in potential strategies, like when to increase face value versus quantity.
-- Analyze opponents' patterns to inform your strategic decisions.
+Consider:
+- Probability Analysis
+  - Calculate the probability of the last bid being true
+  - Estimate the likelihood of your bid being challenged
+  - Consider the total number of dice in play
 
-# Pattern Analysis
-- Track opponent bidding patterns:
-  - Do they frequently bid specific numbers?
-  - Do they tend to bluff on high quantities?
-  - Do they usually increase face value or quantity?
+- Pattern Analysis
+  - Track opponent bidding patterns:
+    - Do they frequently bid specific numbers?
+    - Do they tend to bluff on high quantities?
+    - Do they usually increase face value or quantity?
 
 """
 
 
 
 # System prompt template that explains the game and expected response format
-SYSTEM_PROMPT = f'''You are playing Liar's Dice. You need to make decisions based on the game state
+NAIVE_SYSTEM_PROMPT = f'''You are playing Liar's Dice. You need to make decisions based on the game state
 and respond in a specific format. Here are the rules of the particular version of the game you are playing:
 
 {game_rules}
 
-You will receive information about the game state. Here's an example:
+You will receive information about the game state in the following format. Here's an example:
 
 Game State:
 - Your dice: <dice>
 - Total dice in play: <total_dice>
 - Last bid: <last_bid if last_bid else "None">
 - Valid moves: <valid_moves>
-
 
 Response Format:
 {{

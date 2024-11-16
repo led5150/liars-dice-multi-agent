@@ -1,40 +1,46 @@
 import argparse
 from collections import Counter
 from environment import Environment
-from agent import RandomAgent, InformedAgent, LLMAgent
+from agent import RandomAgent, InformedAgent, AdaptiveAgent, LLMAgent
+from metrics import SimulationMetrics
+import time
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Liar\'s Dice Simulation')
     parser.add_argument('--mode', type=str, default='play',
                       choices=['play', 'sim', 'simulate'],
                       help='Mode to run: "play" for single game, "sim"/"simulate" for multiple games')
-    parser.add_argument('--rounds', type=int, default=10000,
+    parser.add_argument('--rounds', type=int, default=100,
                       help='Number of rounds to simulate in sim mode')
-    parser.add_argument('--verbose', type=int, default=0,
+    parser.add_argument('--verbose', type=int, default=1,
                       choices=[0, 1, 2],
                       help='Verbosity level: 0=none, 1=basic, 2=detailed')
+    parser.add_argument('--sleep-time', type=float, default=5.0,
+                      help='Time to sleep between moves in verbose mode (seconds)')
     
     # Agent configuration
-    parser.add_argument('--random-agents', type=int, default=0,
+    parser.add_argument('--random-agents', type=int, default=1,
                       help='Number of random agents')
-    parser.add_argument('--informed-agents', type=int, default=0,
+    parser.add_argument('--informed-agents', type=int, default=1,
                       help='Number of informed agents')
-    parser.add_argument('--llm-agents', type=int, default=0,
+    parser.add_argument('--adaptive-agents', type=int, default=1,
+                      help='Number of adaptive agents')
+    parser.add_argument('--llm-agents', type=int, default=1,
                       help='Number of LLM agents')
-    parser.add_argument('--llm-model', type=str, default='gpt-3.5-turbo',
+    parser.add_argument('--llm-model', type=str, default='gpt-4o-mini',
                       help='Model to use for LLM agents')
     parser.add_argument('--api-key', type=str,
                       help='API key for LLM agents')
+    
+    # Output configuration
+    parser.add_argument('--output-dir', type=str, default='reports',
+                      help='Directory to save reports and visualizations')
     
     return parser.parse_args()
 
 def create_agents(args):
     agents = []
     color_idx = 0
-
-    # make sure we have at least 2 agents
-    if args.random_agents + args.informed_agents + args.llm_agents < 2:
-        raise ValueError("Need at least 2 agents to play!")
     
     # Add random agents
     for i in range(args.random_agents):
@@ -44,6 +50,11 @@ def create_agents(args):
     # Add informed agents
     for i in range(args.informed_agents):
         agents.append(InformedAgent(name=f"Informed_{i+1}", color_idx=color_idx))
+        color_idx += 1
+    
+    # Add adaptive agents
+    for i in range(args.adaptive_agents):
+        agents.append(AdaptiveAgent(name=f"Adaptive_{i+1}", color_idx=color_idx))
         color_idx += 1
     
     # Add LLM agents
@@ -58,26 +69,46 @@ def create_agents(args):
     
     return agents
 
-def run_simulation(num_rounds: int, agents: list, verbose: int = 0):
-    # Track wins for each agent
-    wins = Counter()
-    env = Environment(agents, verbose=verbose)
+def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: str = 'reports', sleep_time: float = 5.0):
+    # Initialize metrics tracking
+    metrics = SimulationMetrics()
+    
+    # Record agent types
+    for agent in agents:
+        agent_type = agent.__class__.__name__.replace('Agent', '')
+        metrics.agent_types[agent.name] = agent_type
+    
+    env = Environment(agents, verbose=verbose, sleep_time=sleep_time)
     
     for i in range(num_rounds):
-        if verbose >= 1 and (i + 1) % 1000 == 0:
+        if verbose >= 1 and (i + 1) % 10 == 0:
             print(f"Round {i+1}/{num_rounds}")
         
+        # Play game and collect metrics
         winner = env.play_game()
-        wins[winner.name] += 1
+        game_metrics = env.get_metrics()
+        metrics.add_game(game_metrics)
+        
+        # Reset for next game
         env.reset()
     
-    # Print statistics
-    print("\nSimulation Results:")
-    print(f"Total games: {num_rounds}")
-    print("\nWin Distribution:")
-    for agent_name, win_count in wins.items():
-        win_percentage = (win_count / num_rounds) * 100
-        print(f"{agent_name}: {win_count} wins ({win_percentage:.2f}%)")
+    # Generate comprehensive reports
+    metrics.generate_reports(output_dir)
+    
+    # Print summary
+    if verbose >= 1:
+        df = metrics.to_dataframe()
+        print("\nSimulation Results:")
+        print(f"Total games: {num_rounds}")
+        
+        print("\nWin Distribution:")
+        for agent_type in df['agent_type'].unique():
+            wins = df[df['agent_type'] == agent_type]['won'].sum()
+            win_rate = (wins / num_rounds) * 100
+            print(f"{agent_type}:")
+            print(f"  Wins: {wins} ({win_rate:.2f}%)")
+            print(f"  Avg Survival Time: {df[df['agent_type'] == agent_type]['survival_time'].mean():.1f} rounds")
+            print(f"  Bluff Success Rate: {df[df['agent_type'] == agent_type]['successful_bluffs'].mean():.2f}")
 
 def main():
     args = parse_args()
@@ -90,11 +121,24 @@ def main():
         return
     
     if args.mode in ['sim', 'simulate']:
-        run_simulation(args.rounds, agents, args.verbose)
+        run_simulation(args.rounds, agents, args.verbose, args.output_dir, sleep_time=args.sleep_time)
     else:
         # Single game mode
-        env = Environment(agents, verbose=args.verbose)
+        env = Environment(agents, verbose=args.verbose, sleep_time=args.sleep_time)
         env.play_game()
+        
+        # Even in play mode, collect and show metrics
+        if args.verbose >= 1:
+            game_metrics = env.get_metrics()
+            print("\nGame Statistics:")
+            print(f"Total Rounds: {game_metrics.rounds}")
+            print("\nBluffing Stats:")
+            for agent in agents:
+                print(f"\n{agent.name}:")
+                print(f"  Successful Bluffs: {game_metrics.successful_bluffs[agent.name]}")
+                print(f"  Successful Catches: {game_metrics.successful_catches[agent.name]}")
+                print(f"  Bluff Rate: {game_metrics.bluff_rate[agent.name]:.2%}")
+        
         print("\nGame complete.")
 
 if __name__ == "__main__":

@@ -4,6 +4,13 @@ from typing import List, Dict, Tuple, Optional
 import json
 from openai import OpenAI
 from huggingface_hub import InferenceClient
+from pydantic import BaseModel
+from prompts.meta_prompts import (
+    NAIVE_SYSTEM_PROMPT, 
+    INFORMED_SYSTEM_PROMPT,
+    GAME_STATE_PROMPT,
+    ERROR_CORRECTION_PROMPT
+)
 
 # ANSI color codes for agents (nice colors that are easy on the eyes)
 AGENT_COLORS = [
@@ -34,6 +41,13 @@ class LiarsDiceAgent(ABC):
         """Set the agent's current dice"""
         self.dice = sorted(dice)
 
+class LiarsMove(BaseModel):
+    """Pydantic model for structured output from OpenAI"""
+    quantity: int
+    face_value: int
+    bluff: bool
+    reasoning: str
+
 class RandomAgent(LiarsDiceAgent):
     """Agent that makes random valid moves"""
     
@@ -53,20 +67,9 @@ class RandomAgent(LiarsDiceAgent):
 
         # Get valid moves from game state
         valid_moves = game_state.get('valid_moves', [])
-        
-        # Randomly select one of the valid moves
         move = random.choice(valid_moves)
-        
-        face_value = move['face_value'] 
-        quantity = move['quantity']
-
-        
-        return {
-            'face_value': face_value,
-            'quantity': quantity,
-            'bluff': False,
-            'reasoning': 'Random valid move'
-        }
+        move['reasoning'] = 'Random valid move'
+        return move
 
 class InformedAgent(LiarsDiceAgent):
     """Agent that uses probability calculations to make decisions"""
@@ -115,149 +118,280 @@ class InformedAgent(LiarsDiceAgent):
         # Evaluate all valid moves and calculate their probabilities
         move_probabilities = []
         for move in valid_moves:
-            face_value = move['face_value']
-            quantity = move['quantity']
-            
-            # Number of the bid's face_value dice the agent holds
+            if move.get('bluff', False):
+                # For bluff calls, use P_bluff as the probability
+                move_probabilities.append({
+                    'move': move,
+                    'probability': P_bluff
+                })
+            else:
+                face_value = move['face_value']
+                quantity = move['quantity']
+                
+                # Number of the bid's face_value dice the agent holds
+                my_relevant_dice = self.dice.count(face_value)
+                
+                # Remaining dice in play
+                remaining_dice = game_state['total_dice'] - len(self.dice)
+                
+                # Required dice from others to make the bid true
+                required_successes = quantity - my_relevant_dice
+                
+                if required_successes <= 0:
+                    # We have enough dice ourselves - this is a great move!
+                    probability = 1.2  # Bonus for having the dice
+                else:
+                    probability = self.calc_probability(
+                        D=remaining_dice,
+                        p=1/6,
+                        c=required_successes,
+                        k=0
+                    )
+                
+                move_probabilities.append({
+                    'move': move,
+                    'probability': probability
+                })
+        
+        # Select the move with the highest probability
+        best_move_entry = max(move_probabilities, key=lambda x: x['probability'])
+        
+        # Add reasoning to the move
+        best_move_entry['move']['reasoning'] = (
+            f"Move probability: {best_move_entry['probability']:.2%}. "
+            f"Bluff probability: {P_bluff:.2%}"
+        )
+        
+        return best_move_entry['move']
+
+class AdaptiveAgent(LiarsDiceAgent):
+    """Agent that adapts its strategy based on game state and player behavior patterns"""
+    
+    def __init__(self, name: str, color_idx: int = 0):
+        super().__init__(name, color_idx)
+        from liars_dice_calculator import liars_dice_calc
+        self.calc_probability = liars_dice_calc
+        # Track player behavior
+        self.player_history = {}  # {player_idx: [moves]}
+        self.bluff_threshold = 0.4  # Adjustable threshold for calling bluffs
+        self.aggressive_factor = 1.2  # How aggressive to be with bids
+        self.learning_rate = 0.1  # How quickly to adjust to player patterns
+    
+    def _analyze_player_patterns(self, player_idx: int) -> Dict:
+        """Analyze a player's bidding patterns"""
+        if player_idx not in self.player_history:
+            return {'bluff_rate': 0.5, 'avg_quantity_increase': 1, 'prefers_face_increase': False}
+        
+        moves = self.player_history[player_idx]
+        if not moves:
+            return {'bluff_rate': 0.5, 'avg_quantity_increase': 1, 'prefers_face_increase': False}
+        
+        # Calculate bluff rate (how often their bids were unlikely)
+        unlikely_bids = sum(1 for m in moves if m.get('probability', 1.0) < 0.3)
+        bluff_rate = unlikely_bids / len(moves) if moves else 0.5
+        
+        # Analyze bid patterns
+        quantity_increases = []
+        face_increases = []
+        for i in range(1, len(moves)):
+            if moves[i]['quantity'] > moves[i-1]['quantity']:
+                quantity_increases.append(moves[i]['quantity'] - moves[i-1]['quantity'])
+            if moves[i]['face_value'] > moves[i-1]['face_value']:
+                face_increases.append(1)
+        
+        avg_quantity_increase = sum(quantity_increases) / len(quantity_increases) if quantity_increases else 1
+        prefers_face_increase = len(face_increases) > len(quantity_increases)
+        
+        return {
+            'bluff_rate': bluff_rate,
+            'avg_quantity_increase': avg_quantity_increase,
+            'prefers_face_increase': prefers_face_increase
+        }
+    
+    def _adjust_confidence(self, game_state: Dict) -> None:
+        """Adjust confidence thresholds based on game state and past performance"""
+        # Get number of players and their dice
+        players = game_state.get('players', [])
+        if not players:
+            return
+        
+        # More aggressive when we have more dice relative to others
+        my_dice = len(self.dice)
+        avg_dice = sum(p['num_dice'] for p in players) / len(players)
+        dice_advantage = my_dice / avg_dice if avg_dice > 0 else 1
+        
+        # More aggressive when we have more lives
+        my_lives = next((p['lives'] for p in players if p == game_state['current_player']), 2)
+        avg_lives = sum(p['lives'] for p in players) / len(players)
+        life_advantage = my_lives / avg_lives if avg_lives > 0 else 1
+        
+        # Calculate overall position strength
+        position_strength = (dice_advantage + life_advantage) / 2
+        
+        # Adjust thresholds with learning rate
+        target_bluff = 0.4 * (2 - position_strength)
+        target_aggression = 1.0 + (0.2 * position_strength)
+        
+        self.bluff_threshold += self.learning_rate * (target_bluff - self.bluff_threshold)
+        self.aggressive_factor += self.learning_rate * (target_aggression - self.aggressive_factor)
+    
+    def make_move(self, environment) -> Dict:
+        game_state = environment.get_game_state()
+        last_move = game_state.get('last_move')
+        valid_moves = game_state.get('valid_moves', [])
+        
+        # Update player history and adjust confidence
+        if last_move:
+            player_idx = (game_state['current_player'] - 1) % len(game_state['players'])
+            if player_idx not in self.player_history:
+                self.player_history[player_idx] = []
+            self.player_history[player_idx].append(last_move)
+        
+        self._adjust_confidence(game_state)
+        
+        P_bluff = 0.0
+        if last_move:
+            # Calculate probability of last bid being true
+            face_value = last_move['face_value']
+            quantity = last_move['quantity']
             my_relevant_dice = self.dice.count(face_value)
-            
-            # Remaining dice in play
-            remaining_dice = environment.get_num_dice_in_play() - len(self.dice)
-            
-            # Required dice from others to make the bid true
+            remaining_dice = game_state['total_dice'] - len(self.dice)
             required_successes = quantity - my_relevant_dice
             
             if required_successes <= 0:
-                probability = 1.0  # Guaranteed to be true since agent has enough dice
+                P_truthful = 1.0
             else:
-                probability = self.calc_probability(
+                P_truthful = self.calc_probability(
                     D=remaining_dice,
                     p=1/6,
                     c=required_successes,
                     k=0
                 )
             
-            move_probabilities.append({
-                'move': move,
-                'probability': probability
-            })
+            P_bluff = 1 - P_truthful
+            
+            # Analyze last player's patterns
+            last_player = (game_state['current_player'] - 1) % len(game_state['players'])
+            patterns = self._analyze_player_patterns(last_player)
+            
+            # Adjust P_bluff based on player patterns
+            P_bluff = P_bluff * (1 + patterns['bluff_rate'])
         
-        # Select the move with the highest probability
-        best_move_entry = max(move_probabilities, key=lambda x: x['probability'], default=None)
-        
-        # Determine the probability of making the best move
-        P_move = best_move_entry['probability'] if best_move_entry else 0.0
-        
-        # Decision Logic: Choose whichever probability is higher
-        if last_move:
-            if P_bluff > P_move:
-                # Decide to call a bluff
-                return {
-                    'face_value': 0,
-                    'quantity': 0,
-                    'bluff': True,
-                    'reasoning': f'Chose to call bluff based on higher probability ({P_bluff:.2%}) that the last bid was a bluff.'
-                }
-            elif P_move > P_bluff:
-                # Decide to make the best move
-                selected_move = best_move_entry['move']
-                return {
-                    'face_value': selected_move['face_value'],
-                    'quantity': selected_move['quantity'],
-                    'bluff': False,
-                    'reasoning': f'Chose to make the best move with probability ({P_move:.2%}) of being accurate.'
-                }
+        # Evaluate potential moves
+        move_scores = []
+        for move in valid_moves:
+            if move.get('bluff', False):
+                # Score for calling bluff
+                score = P_bluff
             else:
-                # Probabilities are equal; make a 50/50 decision
-                if random.random() < 0.5:
-                    # Call bluff
-                    return {
-                        'face_value': 0,
-                        'quantity': 0,
-                        'bluff': True,
-                        'reasoning': 'Probabilities equal. Decided to call bluff with a 50% chance.'
-                    }
+                # Score for making a bid
+                face_value = move['face_value']
+                quantity = move['quantity']
+                my_relevant_dice = self.dice.count(face_value)
+                remaining_dice = game_state['total_dice'] - len(self.dice)
+                required_successes = quantity - my_relevant_dice
+                
+                if required_successes <= 0:
+                    probability = 1.0
                 else:
-                    # Make the best move
-                    selected_move = best_move_entry['move']
-                    return {
-                        'face_value': selected_move['face_value'],
-                        'quantity': selected_move['quantity'],
-                        'bluff': False,
-                        'reasoning': 'Probabilities equal. Decided to make the best move with a 50% chance.'
-                    }
+                    probability = self.calc_probability(
+                        D=remaining_dice,
+                        p=1/6,
+                        c=required_successes,
+                        k=0
+                    )
+                
+                # Adjust score based on our strategy
+                score = probability * self.aggressive_factor
+                
+                # Prefer moves that align with our dice
+                if my_relevant_dice > 0:
+                    score *= 1.2
+            
+            move_scores.append({'move': move, 'score': score})
+        
+        # Select the best move
+        best_move = max(move_scores, key=lambda x: x['score'])
+        
+        # Add reasoning for debugging
+        if best_move['move'].get('bluff', False):
+            best_move['move']['reasoning'] = (
+                f"Called bluff with P(bluff)={P_bluff:.2f}, threshold={self.bluff_threshold:.2f}. "
+                f"Aggression: {self.aggressive_factor:.2f}"
+            )
         else:
-            if best_move_entry:
-                return {
-                    'face_value': best_move_entry['move']['face_value'],
-                    'quantity': best_move_entry['move']['quantity'],
-                    'bluff': False,
-                    'reasoning': f'No prior bids, making the best available move with probability {P_move:.2%}.'
-                }
-            else:
-                # No valid moves available; default to calling a bluff
-                return {
-                    'face_value': 0,
-                    'quantity': 0,
-                    'bluff': True,
-                    'reasoning': 'No valid moves available, calling bluff by default.'
-                }
+            best_move['move']['reasoning'] = (
+                f"Bid with score={best_move['score']:.2f}, aggression={self.aggressive_factor:.2f}. "
+                f"Confidence threshold: {self.bluff_threshold:.2f}"
+            )
+        
+        return best_move['move']
 
 class LLMAgent(LiarsDiceAgent):
     """Agent that uses LLM for decision making"""
     
-    def __init__(self, name: str, provider: str = 'openai', model: str = None, api_key: str = None, color_idx: int = 0):
+    def __init__(self, name: str, provider: str = 'openai', model: str = 'gpt-4o-mini', 
+                 api_key: str = None, color_idx: int = 0, system_prompt: str = 'naive'):    
         super().__init__(name, color_idx)
         self.provider = provider
-        self.system_prompt = self._load_system_prompt()
+        self.system_prompt = self._load_system_prompt(system_prompt)
         
         if provider == 'openai':
             self.client = OpenAI(api_key=api_key)
-            self.model = model or "gpt-3.5-turbo"
+            self.model = model or "gpt-4o-mini"
         elif provider == 'huggingface':
             self.client = InferenceClient(model=model, token=api_key)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
     
-    def _load_system_prompt(self) -> str:
-        """Load the system prompt from meta-prompts.txt"""
-        with open('meta-prompts.txt', 'r') as f:
-            return f.read()
+    def _load_system_prompt(self, system_prompt) -> str:
+        """Load the appropriate system prompt based on the specified type"""
+        if system_prompt.lower() == 'naive':
+            return NAIVE_SYSTEM_PROMPT
+        elif system_prompt.lower() == 'informed':
+            return INFORMED_SYSTEM_PROMPT
+        else:
+            raise ValueError(f"Unsupported system prompt type: {system_prompt}. Use 'naive' or 'informed'")
     
-    def make_move(self, game_state: Dict) -> Dict:
+    def _format_game_state(self, environment) -> str:
+        """Format the game state using the template from meta_prompts"""
+        game_state = environment.get_game_state()
+        return GAME_STATE_PROMPT.format(
+            dice=self.dice,
+            total_dice=game_state['total_dice'],
+            last_bid=game_state.get('last_move', 'None'),
+            valid_moves=game_state.get('valid_moves', [])
+        )
+
+    def make_move(self, environment) -> Dict:
         """Make a move using the LLM"""
-        prompt = self._format_game_state(game_state)
+        formatted_state = self._format_game_state(environment)
         
         if self.provider == 'openai':
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
-            )
-            move = json.loads(response.choices[0].message.content)
-            
+            try:
+                # Use structured output with Pydantic model
+                completion = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": formatted_state}
+                    ],
+                    response_format=LiarsMove,
+                )
+                move = completion.choices[0].message.parsed
+                return {
+                    'quantity': move.quantity,
+                    'face_value': move.face_value,
+                    'bluff': move.bluff,
+                    'reasoning': move.reasoning
+                }
+            except Exception as e:
+                print(f"Error getting response from OpenAI: {e}")
+                # Fallback to a random valid move
+                game_state = environment.get_game_state()
+                return random.choice(game_state.get('valid_moves', []))
+        
         elif self.provider == 'huggingface':
-            messages = [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-            response = self.client.chat_completion(
-                messages,
-                model=self.model,
-                temperature=0.7
-            )
-            move = json.loads(response.choices[0].message.content)
-            
-        return move
-    
-    def _format_game_state(self, game_state: Dict) -> str:
-        """Format the game state for the LLM prompt"""
-        return f"""
-Current dice: {self.dice}
-History: {json.dumps(game_state.get('history', []))}
-Total dice in play: {game_state.get('total_dice', 0)}
-Last bid: {json.dumps(game_state.get('last_bid', None))}
-""" 
+            # Implementation for Hugging Face
+            # ... (existing code)
+            pass

@@ -1,0 +1,35 @@
+JSON is one of the most widely used formats in the world for applications to exchange data.
+
+Structured Outputs is a feature that ensures the model will always generate responses that adhere to your supplied JSON Schema, so you don't need to worry about the model omitting a required key, or hallucinating an invalid enum value.
+
+Some benefits of Structed Outputs include:
+
+Reliable type-safety: No need to validate or retry incorrectly formatted responses
+Explicit refusals: Safety-based model refusals are now programmatically detectable
+Simpler prompting: No need for strongly worded prompts to achieve consistent formatting
+In addition to supporting JSON Schema in the REST API, the OpenAI SDKs for Python and JavaScript also make it easy to define object schemas using Pydantic and Zod respectively. Below, you can see how to extract information from unstructured text that conforms to a schema defined in code.
+
+Getting a structured response
+python
+
+python
+from pydantic import BaseModel
+from openai import OpenAI
+
+client = OpenAI()
+
+class CalendarEvent(BaseModel):
+    name: str
+    date: str
+    participants: list[str]
+
+completion = client.beta.chat.completions.parse(
+    model="gpt-4o-2024-08-06",
+    messages=[
+        {"role": "system", "content": "Extract the event information."},
+        {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."},
+    ],
+    response_format=CalendarEvent,
+)
+
+event = completion.choices[0].message.parsed

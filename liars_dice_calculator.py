@@ -21,7 +21,6 @@ def dice_roll(num_dice=15):
 
 
 
-
 def liars_dice_calc(D=15, p=1/6, c=0, k=0):
     """
     Calculate the probability of at least c successes in D trials
@@ -41,6 +40,7 @@ def liars_dice_calc(D=15, p=1/6, c=0, k=0):
         return 1.0  # Already have enough successes
     prob = 1 - binom.cdf(c_required - 1, D, p)
     return prob
+
 
 def print_odds_table(D=15, p=1/6):
     """
