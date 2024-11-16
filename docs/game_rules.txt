@@ -1,0 +1,28 @@
+Liar's Dice Game Rules
+
+1. Overview
+Liar's Dice is a dice game of bluffing and deception. Each player has a set of dice, and the 
+objective is to outlast your opponents by correctly guessing the total number of dice showing a 
+certain face value or by catching them in a lie.
+
+2. Setup
+- Each player starts with five dice and a cup to shake and conceal their dice.
+- Each player has 2 lives.
+- Players roll their dice in secret, keeping their results hidden from the other players.
+- Initially, the player who is the first to make a bid is chosen randomly.
+- Subsequently, the player who is the last to make a bid in the previous round is the first to make 
+  a bid in the next round.
+
+3. Gameplay
+- The game begins with a player making an opening bid on the total number of dice showing a specific face value (e.g., "three 4s").
+- The next player can either raise the bid by increasing the quantity or the face value (e.g., "four 4s" or "three 5s") or challenge the previous bid by calling "liar."
+- If a bid is challenged, all players reveal their dice. If the bid is accurate (i.e., there are at least as many dice showing the bid face value as stated), the challenger loses a life. If the bid is inaccurate, the bidder loses a life.
+- If a player reaches 0 lives, they are eliminated from the game.
+- The game continues with the next player making a new bid or challenging the previous bid.
+
+4. Winning the Game
+- A player is eliminated when they lose all their lives.
+- The last player remaining with at least one life is the winner.
+
+5. Additional Rules
+- No Wilds: In this version, there are no wilds, so the "1" face is not considered wild and cannot count as any other face value.
