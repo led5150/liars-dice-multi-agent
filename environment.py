@@ -1,13 +1,15 @@
 import random
 from typing import List, Dict, Optional
 import time
+from time import sleep
 import pandas as pd
 from collections import defaultdict
+import os
 from metrics import GameMetrics
 from agent import InformedAgent, AdaptiveAgent, LLMAgent
 
 class Environment:
-    def __init__(self, agents: List, verbose: int = 0, lives: int = 2, num_dice: int = 5, sleep_time: float = 5.0):
+    def __init__(self, agents: List, verbose: int = 0, lives: int = 2, num_dice: int = 5, sleep_time: float = 5.0, clear_screen: bool = False):
         self.original_agents = agents.copy()  # Keep original list of agents
         self.agents = agents.copy()  # Working copy that might get modified during game
         self.num_players = len(agents)
@@ -16,6 +18,7 @@ class Environment:
         self.current_player_idx = random.randint(0, self.num_players - 1)
         self.verbose = verbose
         self.sleep_time = sleep_time
+        self.clear_screen = clear_screen
         self.game_number = 0  # Track current game number
         
         # Set initial dice for each agent
@@ -231,6 +234,7 @@ class Environment:
             total_count += sum(1 for die in player['dice'] if die == self.last_move['face_value'])
             
         if self.verbose >= 1:
+            print(f"{self.agents[self.current_player_idx].color}{self.agents[self.current_player_idx].name} Called Liar!!\033[0m")
             print(f"\nTotal {self.last_move['face_value']}s in play: {total_count}")
             print(f"Last bid: {self.last_move['quantity']} {self.last_move['face_value']}s")
             
@@ -258,18 +262,23 @@ class Environment:
         if bluff_call_successful:
             # Previous player was bluffing, they lose a life
             loser_idx = self._get_previous_player()
+            winner_idx = self.current_player_idx
             if self.verbose >= 1:
-                print(f"{self.agents[loser_idx].color}{self.agents[loser_idx].name}\033[0m was bluffing!")
+                print(f"{self.agents[loser_idx].color}{self.agents[loser_idx].name} tried to bluff!\033[0m")
+                print(f"{self.agents[self.current_player_idx].color}{self.agents[self.current_player_idx].name} Called their bluff successfully!\033[0m")
         else:
             # Bluff call was wrong, current player loses a life
             loser_idx = self.current_player_idx
+            winner_idx = self._get_previous_player()
             if self.verbose >= 1:
-                print(f"{self.agents[self.current_player_idx].color}{self.agents[self.current_player_idx].name}\033[0m's bluff call was wrong!")
+                print(f"{self.agents[winner_idx].color}{self.agents[winner_idx].name} tried to bluff!\033[0m")
+                print(f"{self.agents[self.current_player_idx].color}{self.agents[self.current_player_idx].name}'s bluff call was wrong!\033[0m")
                 
         # Reduce life count and eliminate if necessary
         self.players[loser_idx]['lives'] -= 1
         if self.verbose >= 1:
             print(f"\033[91m{self.agents[loser_idx].name} lost a life! Lives remaining: {self.players[loser_idx]['lives']}\033[0m")
+            print("-" * 50)
             
         if self.players[loser_idx]['lives'] <= 0:
             self.eliminate_player(loser_idx)
@@ -279,7 +288,7 @@ class Environment:
         
         # Move to next player (skipping eliminated players)
         if len(self.agents) > 1:  # Only update if game isn't over
-            self.current_player_idx = self._get_next_player()
+            self.current_player_idx = winner_idx # Winner gets to go first
             
             # Reroll dice for next round
             for player in self.players:
@@ -315,17 +324,29 @@ class Environment:
                 move['was_bluff'] = None  # Mark as unknown until proven
                 self.last_move = move
                 self._update_metrics(agent.name, move, True)  # Move was accepted
+                # Print move outcome if verbose
+                if self.verbose >= 1:
+                    self._print_move_outcome(move)
+
                 self.current_player_idx = self._get_next_player()
                 
-            # Print move outcome if verbose
-            if self.verbose >= 1:
-                self._print_move_outcome(move)
+
+            
+            if self.verbose >= 2:
+                sleep(self.sleep_time)
         
         # Find the winner (player with lives remaining)
         winner = next(agent.name for i, agent in enumerate(self.agents) 
                      if self.players[i]['lives'] > 0)
         if self.verbose >= 1:
             print(f"\n🏆 {winner.split('_')[0]} agent {winner} wins! 🏆")
+            
+        if self.verbose >= 2:
+            print("\n" + "="*50)
+            print(f"🎲 GAME {self.game_number + 1} OVER 🎲".center(50))
+            print("="*50 + "\n")
+        if self.verbose >= 2:
+            sleep(self.sleep_time)
         return winner
 
     def is_game_over(self) -> bool:
@@ -447,8 +468,14 @@ class Environment:
         prev_idx = (self.current_player_idx - 1) % len(self.agents)
         return prev_idx
 
+    def _clear_screen_if_enabled(self):
+        """Clear the screen if clear_screen is enabled."""
+        if self.clear_screen:
+            os.system('clear' if os.name == 'posix' else 'cls')
+
     def _print_game_state(self):
         """Print the current game state."""
+        self._clear_screen_if_enabled()
         print("\nCurrent Game State:")
         print("-" * 50)
         current_agent = self.agents[self.current_player_idx]
@@ -461,12 +488,28 @@ class Environment:
             print(f"{current}{agent.color}{agent.name}\033[0m: Lives={player['lives']}, Dice=[{dice_str}]")
         
         if self.last_move:
+            last_player = self.agents[self._get_previous_player()]
             print("\nLast Move:", end=' ')
             if self.last_move.get('bluff', False):
-                print("Called Bluff!")
+                print(f"{last_player.color}Called Bluff!\033[0m")
             else:
-                print(f"Bid: {self.last_move['quantity']} {self.last_move['face_value']}s")
-        print("-" * 50)
+                print(f"{last_player.color}Bid: {self.last_move['quantity']} {self.last_move['face_value']}s\033[0m")
+        
+
+    def _print_move_outcome(self, move: Dict):
+        """Print the outcome of a move."""
+        current_agent = self.agents[self.current_player_idx]
+        agent_name = current_agent.name
+        agent_color = current_agent.color
+        current_dice = self.players[self.current_player_idx]['dice']
+        if move.get('bluff', False):
+            print(f"\n{agent_color}{agent_name} called bluff!\033[0m")
+        else:
+            print(f"\n{agent_color}{agent_name} bids {move['quantity']} {move['face_value']}s")
+            dice_str = "[" + ', '.join(str(d) for d in sorted(current_dice)) + "]"
+            print(f"Dice: {dice_str}")
+            print(f"Reasoning: {move['reasoning']}\033[0m")
+            print("-" * 50)
 
     def reset(self):
         """Reset the game state."""

@@ -39,6 +39,8 @@ def parse_args():
                       help='Directory to save reports and visualizations')
     parser.add_argument('--plt-suffix', type=str, default='',
                       help='Suffix to add to plot filenames and subdirectory name')
+    parser.add_argument('--clear-screen', action='store_true',
+                      help='Clear screen between moves for cleaner output')
     
     return parser.parse_args()
 
@@ -73,7 +75,7 @@ def create_agents(args):
     
     return agents
 
-def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: str = 'reports', sleep_time: float = 5.0, plt_suffix: str = ''):
+def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: str = 'reports', sleep_time: float = 5.0, plt_suffix: str = '', clear_screen: bool = False):
     # Initialize metrics tracking
     metrics = SimulationMetrics()
     metrics.verbose = verbose  # Set verbosity level
@@ -85,7 +87,7 @@ def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: 
             print(f"Recording agent: {agent.name} -> {agent_type}")
         metrics.agent_types[agent.name] = agent_type
     
-    env = Environment(agents, verbose=verbose, sleep_time=sleep_time)
+    env = Environment(agents, verbose=verbose, sleep_time=sleep_time, clear_screen=clear_screen)
     
     for i in range(num_rounds):
         if verbose >= 1 and (i + 1) % 10 == 0:
@@ -131,10 +133,12 @@ def main():
         return
     
     if args.mode in ['sim', 'simulate']:
-        run_simulation(args.rounds, agents, args.verbose, args.output_dir, sleep_time=args.sleep_time, plt_suffix=args.plt_suffix)
+        run_simulation(args.rounds, agents, args.verbose, args.output_dir, 
+                      sleep_time=args.sleep_time, plt_suffix=args.plt_suffix,
+                      clear_screen=args.clear_screen)
     else:
         # Single game mode
-        env = Environment(agents, verbose=args.verbose, sleep_time=args.sleep_time)
+        env = Environment(agents, verbose=args.verbose, sleep_time=args.sleep_time, clear_screen=args.clear_screen)
         env.play_game()
         
         # Even in play mode, collect and show metrics
