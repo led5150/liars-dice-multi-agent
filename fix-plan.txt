@@ -1,3 +1,11 @@
+AGENTS:
+
+LLM Agent:
+-  We need to check if the LLM is making valid moves. Check their move against the list of valid moves (from )
+
+
+
+
 Plot fix plan:
 
 1. Bluff Timing Plot: The concept behind this was relying on the average number of dice remaining when bluffing. 

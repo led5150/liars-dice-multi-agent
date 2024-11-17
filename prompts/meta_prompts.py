@@ -77,7 +77,7 @@ Game State:
 - Your dice: <dice>
 - Total dice in play: <total_dice>
 - Last bid: <last_bid if last_bid else "None">
-- Valid moves: <valid_moves>
+
 
 Response Format:
 {{
@@ -110,7 +110,6 @@ GAME_STATE_PROMPT = '''Current Game State:
 - Your dice: {dice}
 - Total dice in play: {total_dice}
 - Last bid: {last_bid}
-- Valid moves: {valid_moves}
 
 What is your move? Respond using the specified format.'''
 

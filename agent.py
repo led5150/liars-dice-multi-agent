@@ -9,7 +9,8 @@ from prompts.meta_prompts import (
     NAIVE_SYSTEM_PROMPT, 
     INFORMED_SYSTEM_PROMPT,
     GAME_STATE_PROMPT,
-    ERROR_CORRECTION_PROMPT
+    ERROR_CORRECTION_PROMPT,
+    INVALID_RESPONSE_PROMPT
 )
 
 # ANSI color codes for agents (nice colors that are easy on the eyes)
@@ -408,7 +409,6 @@ class LLMAgent(LiarsDiceAgent):
             dice=self.dice,
             total_dice=game_state['total_dice'],
             last_bid=game_state.get('last_move', 'None'),
-            valid_moves=game_state.get('valid_moves', [])
         )
 
     def make_move(self, environment) -> Dict:
@@ -427,6 +427,31 @@ class LLMAgent(LiarsDiceAgent):
                     response_format=LiarsMove,
                 )
                 move = completion.choices[0].message.parsed
+                move_json = {'quantity': move.quantity, 'face_value': move.face_value, 'bluff': move.bluff}
+
+                # Need to check if move is valid
+                game_state = environment.get_game_state()
+                valid_moves = game_state.get('valid_moves', [])
+                while move_json not in valid_moves:
+                    print(f"LLM Produced an Invalid move!! {move_json} retrying...")
+                    invalid_prompt = INVALID_RESPONSE_PROMPT.format(
+                        dice=self.dice,
+                        total_dice=game_state['total_dice'],
+                        last_bid=game_state.get('last_move', 'None'),
+                        valid_moves=valid_moves
+                    )
+                    completion = self.client.beta.chat.completions.parse(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": self.system_prompt},
+                            {"role": "user", "content": invalid_prompt}
+                        ],
+                        response_format=LiarsMove,
+                    )
+                    move = completion.choices[0].message.parsed 
+                    move_json = {'quantity': move.quantity, 'face_value': move.face_value, 'bluff': move.bluff}
+                print("LLM Produced a Valid move!!")
+                # Update last reasonin
                 self.last_reasoning = {
                     "decision_type": move.reasoning,
                     "move": move.dict()
