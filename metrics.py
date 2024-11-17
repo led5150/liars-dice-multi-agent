@@ -129,15 +129,15 @@ class SimulationMetrics:
         
         # Create DataFrame and add debug info if verbose
         df = pd.DataFrame(data)
-        if self.verbose >= 2:
-            print("\nDataFrame Info:")
-            print(df.info())
-            print("\nSample of list-type metrics:")
-            list_cols = ['dice_remaining_successful_bluff', 'dice_remaining_failed_bluff',
-                        'predicted_probability', 'actual_outcome', 'bluff_threshold',
-                        'predicted_bluff_rate', 'actual_bluff_rate', 'decision_type',
-                        'successful_move']
-            print(df[list_cols].head())
+        # if self.verbose >= 2:
+        #     print("\nDataFrame Info:")
+        #     print(df.info())
+        #     print("\nSample of list-type metrics:")
+        #     list_cols = ['dice_remaining_successful_bluff', 'dice_remaining_failed_bluff',
+        #                 'predicted_probability', 'actual_outcome', 'bluff_threshold',
+        #                 'predicted_bluff_rate', 'actual_bluff_rate', 'decision_type',
+        #                 'successful_move']
+        #     print(df[list_cols].head())
         
         return df
 
@@ -195,6 +195,7 @@ class SimulationMetrics:
         suffix = f"_{plt_suffix}" if plt_suffix else ""
         
         plt.figure(figsize=(8, 6))
+        
         sorted_df = df.copy()
         sorted_df['agent_type'] = pd.Categorical(sorted_df['agent_type'], categories=agent_types)
         
@@ -263,22 +264,46 @@ class SimulationMetrics:
     def plot_bid_patterns(self, output_dir: str, plt_suffix: str):
         """Plot bidding patterns by agent type."""
         df = self.to_dataframe()
-        agent_types = sorted(df['agent_type'].unique())
+        
+        if df.empty:
+            if self.verbose >= 1:
+                print("Warning: No data available for bid patterns plot")
+            return
+        
+        plt.figure(figsize=(12, 6))
         colors = self.get_plot_colors()
-        suffix = f"_{plt_suffix}" if plt_suffix else ""
         
-        plt.figure(figsize=(8, 6))
-        bid_patterns = df.groupby('agent_type')['avg_bid_quantity'].mean()
-        bid_patterns = bid_patterns.reindex(agent_types)
-        ax = bid_patterns.plot(kind='bar', color=[colors[i] for i in range(len(agent_types))])
-        plt.title('Average Bidding Patterns by Agent Type', pad=20, fontsize=12, fontweight='bold')
+        # Switch to bar plot for more reliable visualization
+        agent_types = sorted(df['agent_type'].unique())
+        bid_means = []
+        bid_stds = []
+        
+        for agent_type in agent_types:
+            agent_data = df[df['agent_type'] == agent_type]
+            bid_means.append(agent_data['avg_bid_quantity'].mean())
+            bid_stds.append(agent_data['avg_bid_quantity'].std())
+        
+        x = np.arange(len(agent_types))
+        bars = plt.bar(x, bid_means, yerr=bid_stds, capsize=5,
+                      color=[colors[i] for i in range(len(agent_types))],
+                      alpha=0.7, label=agent_types)
+        
+        plt.xticks(x, agent_types, rotation=45)
+        plt.title('Average Bid Quantities by Agent Type')
+        plt.xlabel('Agent Type')
         plt.ylabel('Average Bid Quantity')
+        plt.grid(True, alpha=0.3)
         
-        for i, v in enumerate(bid_patterns):
-            ax.text(i, v + 0.1, f'{v:.1f}', ha='center', fontweight='bold')
+        # Add value labels on bars
+        for i, v in enumerate(bid_means):
+            plt.text(i, v + 0.1, f'{v:.2f}', ha='center')
         
-        plt.tight_layout()
-        plt.savefig(f'{output_dir}/bidding_patterns{suffix}.png', dpi=300, bbox_inches='tight')
+        # Only add legend if we have bars
+        if len(bars) > 0:
+            plt.legend(title='Agent Type')
+        
+        suffix = f"_{plt_suffix}" if plt_suffix else ""
+        plt.savefig(f'{output_dir}/bid_patterns{suffix}.png', dpi=300, bbox_inches='tight')
         plt.close()
 
     def plot_win_progression(self, output_dir: str, plt_suffix: str):
@@ -627,53 +652,54 @@ class SimulationMetrics:
         
         plt.figure(figsize=(10, 8))
         
-        # Create main scatter plot
-        scatter = plt.scatter(df_exploded['predicted_probability'], 
-                            df_exploded['actual_outcome'],
-                            alpha=0.5,
-                            c=df_exploded['game_id'],  # Color by game
-                            cmap='viridis')
+        # Create hexbin plot instead of scatter for dense data
+        hb = plt.hexbin(df_exploded['predicted_probability'], 
+                       df_exploded['actual_outcome'],
+                       gridsize=20,  # Adjust number of hexagons
+                       cmap='YlOrRd',  # Use a sequential colormap
+                       mincnt=1,  # Minimum points for a hex to be colored
+                       bins='log')  # Use log scale for better color distribution
+        
+        # Add colorbar to show density
+        cb = plt.colorbar(hb, label='Log10(Count)')
         
         # Add perfect prediction line
-        plt.plot([0, 1], [0, 1], 'r--', label='Perfect Prediction')
+        plt.plot([0, 1], [0, 1], 'b--', label='Perfect Prediction', linewidth=2)
         
         # Add trend line
-        z = np.polyfit(df_exploded['predicted_probability'], df_exploded['actual_outcome'], 1)
+        z = np.polyfit(df_exploded['predicted_probability'], 
+                      df_exploded['actual_outcome'], 1)
         p = np.poly1d(z)
         plt.plot(df_exploded['predicted_probability'], 
                 p(df_exploded['predicted_probability']),
-                "b-", alpha=0.8,
+                "g-", alpha=0.8, linewidth=2,
                 label=f'Trend Line (y={z[0]:.2f}x+{z[1]:.2f})')
         
-        # Calculate and display correlation coefficient
+        # Calculate and display correlation
         corr = df_exploded['predicted_probability'].corr(df_exploded['actual_outcome'])
-        plt.text(0.05, 0.95, f'Correlation: {corr:.2f}', 
+        plt.text(0.02, 0.95, 
+                f'Prediction-Reality Correlation: {corr:.3f}\n'
+                f'(1 = perfect, 0 = none, -1 = inverse)',
                 transform=plt.gca().transAxes,
                 bbox=dict(facecolor='white', alpha=0.8))
         
-        # Calculate accuracy metrics
+        # Calculate and display additional statistics
         mse = ((df_exploded['predicted_probability'] - df_exploded['actual_outcome']) ** 2).mean()
-        rmse = np.sqrt(mse)
-        mae = (df_exploded['predicted_probability'] - df_exploded['actual_outcome']).abs().mean()
+        plt.text(0.02, 0.85,
+                f'Mean Squared Error: {mse:.3f}\n'
+                f'Root MSE: {np.sqrt(mse):.3f}',
+                transform=plt.gca().transAxes,
+                bbox=dict(facecolor='white', alpha=0.8))
         
-        if self.verbose >= 2:
-            print("\nProbability Prediction Metrics:")
-            print(f"Correlation: {corr:.3f}")
-            print(f"Mean Squared Error: {mse:.3f}")
-            print(f"Root Mean Squared Error: {rmse:.3f}")
-            print(f"Mean Absolute Error: {mae:.3f}")
-        
-        plt.title('Probability Prediction Accuracy (Informed Agents)', 
-                 pad=20, fontsize=12, fontweight='bold')
+        plt.title('Probability Prediction Accuracy (Hexbin Density Plot)')
         plt.xlabel('Predicted Probability')
         plt.ylabel('Actual Outcome')
-        
-        # Add colorbar to show game progression
-        plt.colorbar(scatter, label='Game Number')
-        
         plt.grid(True, alpha=0.3)
-        plt.legend()
+        plt.legend(loc='lower right')
         plt.tight_layout()
+        
+        # Set equal aspect ratio for better visualization
+        plt.gca().set_aspect('equal', adjustable='box')
         
         suffix = f"_{plt_suffix}" if plt_suffix else ""
         plt.savefig(f'{output_dir}/probability_accuracy{suffix}.png', dpi=300, bbox_inches='tight')
@@ -689,9 +715,40 @@ class SimulationMetrics:
             return
         
         # Filter for Adaptive agents (note: agent type is stored without 'Agent' suffix)
-        df_exploded = df[df['agent_type'] == 'Adaptive'].explode(
-            ['predicted_bluff_rate', 'actual_bluff_rate', 'bluff_threshold']
-        )
+        df_adaptive = df[df['agent_type'] == 'Adaptive'].copy()
+        
+        # Create lists to store exploded data
+        game_ids = []
+        agent_names = []
+        predicted_rates = []
+        actual_rates = []
+        thresholds = []
+        
+        # Manually explode the data
+        for idx, row in df_adaptive.iterrows():
+            pred_rate = row['predicted_bluff_rate']
+            act_rate = row['actual_bluff_rate']
+            thresh = row['bluff_threshold']
+            
+            # Get the minimum length to ensure alignment
+            min_len = min(len(pred_rate), len(act_rate), len(thresh))
+            
+            # Add data points
+            for i in range(min_len):
+                game_ids.append(row['game_id'])
+                agent_names.append(row['agent_name'])
+                predicted_rates.append(pred_rate[i])
+                actual_rates.append(act_rate[i])
+                thresholds.append(thresh[i])
+        
+        # Create new DataFrame with exploded data
+        df_exploded = pd.DataFrame({
+            'game_id': game_ids,
+            'agent_name': agent_names,
+            'predicted_bluff_rate': predicted_rates,
+            'actual_bluff_rate': actual_rates,
+            'bluff_threshold': thresholds
+        })
         
         # Convert to numeric, dropping any non-numeric values
         for col in ['predicted_bluff_rate', 'actual_bluff_rate', 'bluff_threshold']:
@@ -704,75 +761,134 @@ class SimulationMetrics:
             if self.verbose >= 1:
                 print("Warning: No valid adaptive learning data")
             return
+            
+        if self.verbose >= 2:
+            print("\nAdaptive Learning Data:")
+            print(f"Number of data points: {len(df_exploded)}")
+            print("\nSample of values:")
+            print(df_exploded[['predicted_bluff_rate', 'actual_bluff_rate', 'bluff_threshold']].head())
         
         # Create figure with two subplots
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
         fig.suptitle('Adaptive Agent Learning Analysis', fontsize=14, fontweight='bold', y=0.95)
         
         # Plot 1: Learning Progression Over Time
-        # Add index for move ordering
+        # Add move number within each game
         df_exploded['move_number'] = df_exploded.groupby('game_id').cumcount() + 1
         
-        # Plot rates and threshold
-        ax1.plot(df_exploded['move_number'], df_exploded['predicted_bluff_rate'],
-                label='Predicted Bluff Rate', marker='o', alpha=0.6)
-        ax1.plot(df_exploded['move_number'], df_exploded['actual_bluff_rate'],
-                label='Actual Bluff Rate', marker='s', alpha=0.6)
-        ax1.plot(df_exploded['move_number'], df_exploded['bluff_threshold'],
-                label='Bluff Threshold', marker='^', alpha=0.6)
+        # Sort by game and move number for continuous progression
+        df_exploded = df_exploded.sort_values(['game_id', 'move_number'])
+        df_exploded['global_move'] = range(1, len(df_exploded) + 1)
+        
+        # Bin data into intervals for cleaner visualization
+        n_bins = 20  # Adjust number of bins as needed
+        df_exploded['bin'] = pd.qcut(df_exploded['global_move'], n_bins, labels=False)
+        
+        # Calculate binned statistics
+        df_binned = df_exploded.groupby('bin').agg({
+            'global_move': ['mean', 'std'],
+            'predicted_bluff_rate': ['mean', 'std'],
+            'actual_bluff_rate': ['mean', 'std'],
+            'bluff_threshold': ['mean', 'std']
+        })
+        
+        # Flatten column names
+        df_binned.columns = ['_'.join(col).strip() for col in df_binned.columns.values]
+        
+        # Plot smoothed trends
+        ax1.plot(df_binned['global_move_mean'], df_binned['predicted_bluff_rate_mean'],
+                label='Predicted Bluff Rate', color='blue', linewidth=2)
+        ax1.plot(df_binned['global_move_mean'], df_binned['actual_bluff_rate_mean'],
+                label='Actual Bluff Rate', color='orange', linewidth=2)
+        ax1.plot(df_binned['global_move_mean'], df_binned['bluff_threshold_mean'],
+                label='Bluff Threshold', color='green', linewidth=2)
+        
+        # Add light scatter points for raw values
+        ax1.scatter(df_exploded['global_move'], df_exploded['predicted_bluff_rate'],
+                   alpha=0.1, color='blue', s=5)
+        ax1.scatter(df_exploded['global_move'], df_exploded['actual_bluff_rate'],
+                   alpha=0.1, color='orange', s=5)
+        ax1.scatter(df_exploded['global_move'], df_exploded['bluff_threshold'],
+                   alpha=0.1, color='green', s=5)
+        
+        # Add shaded confidence intervals where std > 0
+        for col, color in [('predicted_bluff_rate', 'blue'), 
+                         ('actual_bluff_rate', 'orange'),
+                         ('bluff_threshold', 'green')]:
+            std_col = f'{col}_std'
+            mean_col = f'{col}_mean'
+            mask = df_binned[std_col] > 0
+            if mask.any():
+                ax1.fill_between(df_binned.loc[mask, 'global_move_mean'],
+                               df_binned.loc[mask, mean_col] - df_binned.loc[mask, std_col],
+                               df_binned.loc[mask, mean_col] + df_binned.loc[mask, std_col],
+                               alpha=0.1, color=color)
+        
+        # Add vertical lines to separate games
+        for game_end in df_exploded.groupby('game_id')['global_move'].max():
+            ax1.axvline(x=game_end, color='gray', linestyle='--', alpha=0.2)
         
         ax1.set_title('Learning Progression Over Time')
-        ax1.set_xlabel('Move Number')
+        ax1.set_xlabel('Move Number (Across All Games)')
         ax1.set_ylabel('Rate')
         ax1.grid(True, alpha=0.3)
         ax1.legend()
         
         # Calculate and display convergence metrics
         final_error = abs(df_exploded['predicted_bluff_rate'] - df_exploded['actual_bluff_rate']).iloc[-10:].mean()
-        ax1.text(0.02, 0.95, f'Final Prediction Error: {final_error:.3f}',
+        ax1.text(0.02, 0.95, 
+                f'Recent Prediction Accuracy:\n'
+                f'Mean Error (last 10 moves): {final_error:.3f}\n'
+                f'(0 = perfect, 1 = worst)',
                 transform=ax1.transAxes,
                 bbox=dict(facecolor='white', alpha=0.8))
         
         # Plot 2: Prediction Accuracy
-        ax2.scatter(df_exploded['predicted_bluff_rate'], 
-                   df_exploded['actual_bluff_rate'],
-                   alpha=0.5,
-                   c=df_exploded['move_number'],
-                   cmap='viridis')
+        # Create hexbin plot instead of scatter for dense data
+        hb = ax2.hexbin(df_exploded['predicted_bluff_rate'], 
+                       df_exploded['actual_bluff_rate'],
+                       gridsize=20,  # Adjust number of hexagons
+                       cmap='YlOrRd',  # Use a sequential colormap
+                       mincnt=1,  # Minimum points for a hex to be colored
+                       bins='log')  # Use log scale for better color distribution
+        
+        # Add colorbar to show density
+        plt.colorbar(hb, ax=ax2, label='Log10(Count)')
         
         # Add perfect prediction line
-        ax2.plot([0, 1], [0, 1], 'r--', label='Perfect Prediction')
+        ax2.plot([0, 1], [0, 1], 'b--', label='Perfect Prediction', linewidth=2)
         
-        # Add trend line
-        z = np.polyfit(df_exploded['predicted_bluff_rate'], df_exploded['actual_bluff_rate'], 1)
-        p = np.poly1d(z)
-        ax2.plot(df_exploded['predicted_bluff_rate'],
-                p(df_exploded['predicted_bluff_rate']),
-                "b-", alpha=0.8,
-                label=f'Trend Line (y={z[0]:.2f}x+{z[1]:.2f})')
+        # Add trend line if there's enough variance
+        pred_std = df_exploded['predicted_bluff_rate'].std()
+        actual_std = df_exploded['actual_bluff_rate'].std()
         
-        # Calculate and display correlation
-        corr = df_exploded['predicted_bluff_rate'].corr(df_exploded['actual_bluff_rate'])
-        ax2.text(0.02, 0.95, f'Correlation: {corr:.2f}',
-                transform=ax2.transAxes,
-                bbox=dict(facecolor='white', alpha=0.8))
+        if pred_std > 0 and actual_std > 0:
+            z = np.polyfit(df_exploded['predicted_bluff_rate'], 
+                         df_exploded['actual_bluff_rate'], 1)
+            p = np.poly1d(z)
+            ax2.plot(df_exploded['predicted_bluff_rate'], 
+                    p(df_exploded['predicted_bluff_rate']),
+                    "g-", alpha=0.8, linewidth=2,
+                    label=f'Trend Line (y={z[0]:.2f}x+{z[1]:.2f})')
+            
+            # Calculate and display correlation
+            corr = df_exploded['predicted_bluff_rate'].corr(df_exploded['actual_bluff_rate'])
+            ax2.text(0.02, 0.95, 
+                    f'Prediction-Reality Correlation: {corr:.3f}\n'
+                    f'(1 = perfect, 0 = none, -1 = inverse)',
+                    transform=ax2.transAxes,
+                    bbox=dict(facecolor='white', alpha=0.8))
+        else:
+            ax2.text(0.02, 0.95,
+                    'Insufficient variance for correlation',
+                    transform=ax2.transAxes,
+                    bbox=dict(facecolor='white', alpha=0.8))
         
         ax2.set_title('Prediction Accuracy')
         ax2.set_xlabel('Predicted Bluff Rate')
         ax2.set_ylabel('Actual Bluff Rate')
         ax2.grid(True, alpha=0.3)
         ax2.legend()
-        
-        # Add colorbar to show move progression
-        scatter = ax2.collections[0]
-        plt.colorbar(scatter, ax=ax2, label='Move Number')
-        
-        if self.verbose >= 2:
-            print("\nAdaptive Learning Metrics:")
-            print(f"Final Prediction Error: {final_error:.3f}")
-            print(f"Prediction Correlation: {corr:.3f}")
-            print("\nThreshold Statistics:")
-            print(df_exploded['bluff_threshold'].describe())
         
         plt.tight_layout()
         suffix = f"_{plt_suffix}" if plt_suffix else ""

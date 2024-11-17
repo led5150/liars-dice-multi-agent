@@ -91,6 +91,9 @@ def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: 
         if verbose >= 1 and (i + 1) % 10 == 0:
             print(f"Round {i+1}/{num_rounds}")
         
+        # Set current game number
+        env.game_number = i
+        
         # Play game and collect metrics
         winner = env.play_game()
         game_metrics = env.get_metrics()
@@ -103,19 +106,19 @@ def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: 
     metrics.generate_reports(output_dir, plt_suffix)
     
     # Print summary
-    if verbose >= 1:
-        df = metrics.to_dataframe()
-        print("\nSimulation Results:")
-        print(f"Total games: {num_rounds}")
+    # if verbose >= 1:
+    #     df = metrics.to_dataframe()
+    #     print("\nSimulation Results:")
+    #     print(f"Total games: {num_rounds}")
         
-        print("\nWin Distribution:")
-        for agent_type in df['agent_type'].unique():
-            wins = df[df['agent_type'] == agent_type]['won'].sum()
-            win_rate = (wins / num_rounds) * 100
-            print(f"{agent_type}:")
-            print(f"  Wins: {wins} ({win_rate:.2f}%)")
-            print(f"  Avg Survival Time: {df[df['agent_type'] == agent_type]['survival_time'].mean():.1f} rounds")
-            print(f"  Bluff Success Rate: {df[df['agent_type'] == agent_type]['successful_bluffs'].mean():.2f}")
+    #     print("\nWin Distribution:")
+    #     for agent_type in df['agent_type'].unique():
+    #         wins = df[df['agent_type'] == agent_type]['won'].sum()
+    #         win_rate = (wins / num_rounds) * 100
+    #         print(f"{agent_type}:")
+    #         print(f"  Wins: {wins} ({win_rate:.2f}%)")
+    #         print(f"  Avg Survival Time: {df[df['agent_type'] == agent_type]['survival_time'].mean():.1f} rounds")
+    #         print(f"  Bluff Success Rate: {df[df['agent_type'] == agent_type]['successful_bluffs'].mean():.2f}")
 
 def main():
     args = parse_args()

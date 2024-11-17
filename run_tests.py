@@ -213,5 +213,5 @@ class TestRunner:
 
 if __name__ == "__main__":
     # For initial testing, use 10 rounds
-    runner = TestRunner(test_rounds=3)
+    runner = TestRunner(test_rounds=2)
     runner.run_all_tests()

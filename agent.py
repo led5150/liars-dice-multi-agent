@@ -163,7 +163,10 @@ class InformedAgent(LiarsDiceAgent):
         
         # Add reasoning to the move
         if best_move['bluff']:
-            best_move['reasoning'] = f"Calling bluff. probability: {best_probability:.2%}. Best alternative probability: {max(p for m, p in move_evaluations if not m['bluff']):.2%}"
+            # Find best alternative probability if there are non-bluff moves
+            alternative_moves = [(m, p) for m, p in move_evaluations if not m['bluff']]
+            best_alt_prob = max(p for m, p in alternative_moves) if alternative_moves else 0.0
+            best_move['reasoning'] = f"Calling bluff. probability: {best_probability:.2%}. Best alternative probability: {best_alt_prob:.2%}"
         else:
             best_move['reasoning'] = f"Move probability: {best_probability:.2%}. Bluff probability: {P_bluff:.2%}"
         
@@ -191,9 +194,16 @@ class AdaptiveAgent(LiarsDiceAgent):
         if not moves:
             return {'bluff_rate': 0.5, 'avg_quantity_increase': 1, 'prefers_face_increase': False}
         
-        # Calculate bluff rate (how often their bids were unlikely)
-        unlikely_bids = sum(1 for m in moves if m.get('probability', 1.0) < 0.3)
-        bluff_rate = unlikely_bids / len(moves) if moves else 0.5
+        # Calculate actual bluff rate from outcomes
+        bluffs = sum(1 for m in moves if m.get('was_bluff', False))
+        bluff_rate = bluffs / len(moves) if moves else 0.5
+        
+        # Weight recent moves more heavily
+        if len(moves) > 5:
+            recent_bluffs = sum(1 for m in moves[-5:] if m.get('was_bluff', False))
+            recent_rate = recent_bluffs / 5
+            # Blend recent and overall rates (favor recent)
+            bluff_rate = 0.7 * recent_rate + 0.3 * bluff_rate
         
         # Analyze bid patterns
         quantity_increases = []
@@ -212,7 +222,7 @@ class AdaptiveAgent(LiarsDiceAgent):
             'avg_quantity_increase': avg_quantity_increase,
             'prefers_face_increase': prefers_face_increase
         }
-    
+        
     def _adjust_confidence(self, game_state: Dict) -> None:
         """Adjust confidence thresholds based on game state and past performance"""
         # Get number of players and their dice
@@ -234,11 +244,11 @@ class AdaptiveAgent(LiarsDiceAgent):
         position_strength = (dice_advantage + life_advantage) / 2
         
         # Adjust thresholds with learning rate
-        target_bluff = 0.4 * (2 - position_strength)
         target_aggression = 1.0 + (0.2 * position_strength)
-        
-        self.bluff_threshold += self.learning_rate * (target_bluff - self.bluff_threshold)
         self.aggressive_factor += self.learning_rate * (target_aggression - self.aggressive_factor)
+        
+        # Keep aggression in reasonable range
+        self.aggressive_factor = max(0.8, min(1.5, self.aggressive_factor))
     
     def make_move(self, environment) -> Dict:
         game_state = environment.get_game_state()
@@ -250,11 +260,27 @@ class AdaptiveAgent(LiarsDiceAgent):
             player_idx = (game_state['current_player'] - 1) % len(game_state['players'])
             if player_idx not in self.player_history:
                 self.player_history[player_idx] = []
+            
+            # Always update history with the move
             self.player_history[player_idx].append(last_move)
+            
+            # Adjust bluff threshold if we know the outcome
+            if 'was_bluff' in last_move:
+                if last_move['was_bluff']:
+                    # If it was a bluff, lower threshold to catch more
+                    self.bluff_threshold *= (1 - self.learning_rate)
+                else:
+                    # If it wasn't a bluff, raise threshold to be more cautious
+                    self.bluff_threshold *= (1 + self.learning_rate)
+                
+                # Keep threshold in reasonable range
+                self.bluff_threshold = max(0.2, min(0.8, self.bluff_threshold))
         
         self._adjust_confidence(game_state)
         
         P_bluff = 0.0
+        patterns = {'bluff_rate': 0.5}  # Default pattern
+        
         if last_move:
             # Calculate probability of last bid being true
             face_value = last_move['face_value']
@@ -279,8 +305,20 @@ class AdaptiveAgent(LiarsDiceAgent):
             last_player = (game_state['current_player'] - 1) % len(game_state['players'])
             patterns = self._analyze_player_patterns(last_player)
             
-            # Adjust P_bluff based on player patterns
-            P_bluff = P_bluff * (1 + patterns['bluff_rate'])
+            # Blend mathematical probability with historical patterns
+            P_bluff = 0.7 * P_bluff + 0.3 * patterns['bluff_rate']
+            
+            # Store predicted bluff rate for metrics
+            self.predicted_bluff_rate = P_bluff
+            
+            # If probability of bluff is high enough, call it
+            if P_bluff > self.bluff_threshold:
+                return {
+                    'bluff': True,
+                    'predicted_bluff_rate': P_bluff,
+                    'actual_bluff_rate': patterns['bluff_rate'],
+                    'bluff_threshold': self.bluff_threshold
+                }
         
         # Evaluate potential moves
         move_scores = []
@@ -328,6 +366,11 @@ class AdaptiveAgent(LiarsDiceAgent):
                 f"Bid with score={best_move['score']:.2f}, aggression={self.aggressive_factor:.2f}. "
                 f"Confidence threshold: {self.bluff_threshold:.2f}"
             )
+            
+        # Track learning metrics
+        best_move['move']['predicted_bluff_rate'] = P_bluff
+        best_move['move']['actual_bluff_rate'] = patterns['bluff_rate'] if last_move else 0.5
+        best_move['move']['bluff_threshold'] = self.bluff_threshold
         
         return best_move['move']
 

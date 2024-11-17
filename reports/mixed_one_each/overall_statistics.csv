@@ -1,0 +1,6 @@
+,won,won,survival_time,survival_time,bluff_rate,successful_bluffs,successful_catches,final_lives
+,mean,count,mean,std,mean,mean,mean,mean
+agent_type,,,,,,,,
+Adaptive,0.53,200,-0.485,0.53,0.36,0.41,2.0,0.81
+Informed,0.47,200,-0.555,0.546,0.433,0.11,2.365,0.715
+Random,0.0,400,-2.48,0.539,0.023,1.968,0.045,0.0
