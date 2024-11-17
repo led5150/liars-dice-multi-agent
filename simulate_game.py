@@ -7,25 +7,27 @@ import time
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Liar\'s Dice Simulation')
+    
+    # Game configuration
     parser.add_argument('--mode', type=str, default='play',
                       choices=['play', 'sim', 'simulate'],
                       help='Mode to run: "play" for single game, "sim"/"simulate" for multiple games')
-    parser.add_argument('--rounds', type=int, default=100,
+    parser.add_argument('--rounds', type=int, default=1000,
                       help='Number of rounds to simulate in sim mode')
-    parser.add_argument('--verbose', type=int, default=1,
+    parser.add_argument('--verbose', type=int, default=0,
                       choices=[0, 1, 2],
                       help='Verbosity level: 0=none, 1=basic, 2=detailed')
     parser.add_argument('--sleep-time', type=float, default=5.0,
                       help='Time to sleep between moves in verbose mode (seconds)')
     
     # Agent configuration
-    parser.add_argument('--random-agents', type=int, default=1,
+    parser.add_argument('--random-agents', type=int, default=0,
                       help='Number of random agents')
-    parser.add_argument('--informed-agents', type=int, default=1,
+    parser.add_argument('--informed-agents', type=int, default=0,
                       help='Number of informed agents')
-    parser.add_argument('--adaptive-agents', type=int, default=1,
+    parser.add_argument('--adaptive-agents', type=int, default=0,
                       help='Number of adaptive agents')
-    parser.add_argument('--llm-agents', type=int, default=1,
+    parser.add_argument('--llm-agents', type=int, default=0,
                       help='Number of LLM agents')
     parser.add_argument('--llm-model', type=str, default='gpt-4o-mini',
                       help='Model to use for LLM agents')
@@ -35,6 +37,8 @@ def parse_args():
     # Output configuration
     parser.add_argument('--output-dir', type=str, default='reports',
                       help='Directory to save reports and visualizations')
+    parser.add_argument('--plt-suffix', type=str, default='',
+                      help='Suffix to add to plot filenames and subdirectory name')
     
     return parser.parse_args()
 
@@ -69,13 +73,16 @@ def create_agents(args):
     
     return agents
 
-def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: str = 'reports', sleep_time: float = 5.0):
+def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: str = 'reports', sleep_time: float = 5.0, plt_suffix: str = ''):
     # Initialize metrics tracking
     metrics = SimulationMetrics()
+    metrics.verbose = verbose  # Set verbosity level
     
     # Record agent types
     for agent in agents:
-        agent_type = agent.__class__.__name__.replace('Agent', '')
+        agent_type = metrics._get_agent_type(agent.__class__.__name__)
+        if verbose >= 1:
+            print(f"Recording agent: {agent.name} -> {agent_type}")
         metrics.agent_types[agent.name] = agent_type
     
     env = Environment(agents, verbose=verbose, sleep_time=sleep_time)
@@ -93,7 +100,7 @@ def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: 
         env.reset()
     
     # Generate comprehensive reports
-    metrics.generate_reports(output_dir)
+    metrics.generate_reports(output_dir, plt_suffix)
     
     # Print summary
     if verbose >= 1:
@@ -121,7 +128,7 @@ def main():
         return
     
     if args.mode in ['sim', 'simulate']:
-        run_simulation(args.rounds, agents, args.verbose, args.output_dir, sleep_time=args.sleep_time)
+        run_simulation(args.rounds, agents, args.verbose, args.output_dir, sleep_time=args.sleep_time, plt_suffix=args.plt_suffix)
     else:
         # Single game mode
         env = Environment(agents, verbose=args.verbose, sleep_time=args.sleep_time)

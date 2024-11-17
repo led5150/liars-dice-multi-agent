@@ -13,9 +13,9 @@ certain face value or by catching them in a lie.
 - Subsequently, the player who is the last to make a bid in the previous round is the first to make 
   a bid in the next round.
 
-3. Gameplay
+3. Gameplay Rules for this Variant
 - The game begins with a player making an opening bid on the total number of dice showing a specific face value (e.g., "three 4s").
-- The next player can either raise the bid by increasing the quantity or the face value (e.g., "four 4s" or "three 5s") or challenge the previous bid by calling "liar."
+- The next player can either raise the bid by increasing the quantity of the same face, or a higher quantity of any other face value (e.g., "four 4s" or "four 1s") or challenge the previous bid by calling "liar."
 - If a bid is challenged, all players reveal their dice. If the bid is accurate (i.e., there are at least as many dice showing the bid face value as stated), the challenger loses a life. If the bid is inaccurate, the bidder loses a life.
 - If a player reaches 0 lives, they are eliminated from the game.
 - The game continues with the next player making a new bid or challenging the previous bid.

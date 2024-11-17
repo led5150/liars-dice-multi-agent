@@ -1,0 +1,23 @@
+Baseline Tests
+Control tests to establish baseline performance
+Shows what "random" and "informed" baselines look like
+
+Probability vs Random
+Directly tests your hypothesis about probability-based decisions
+1v3 and 2v2 configurations to test different scenarios
+
+Adaptive Intelligence
+Tests if adaptive learning can outperform pure probability
+Includes challenging scenarios against informed agents
+
+LLM (Human-like) Performance
+Tests your "human proxy" against other strategies
+Uses fewer rounds due to API constraints
+
+Mixed Environment Tests
+Tests all agent types together
+Helps establish a hierarchy of effectiveness
+
+Long-Term Learning
+Extended tests to analyze learning depth
+Focus on adaptive agent improvement over time

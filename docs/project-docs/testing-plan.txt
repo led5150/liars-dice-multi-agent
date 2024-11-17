@@ -1,0 +1,259 @@
+Liar's Dice Testing Plan
+=====================
+
+Test Suite 1: Baseline Tests
+---------------------------
+
+TestName: Control_4Random
+Description: Control test with 4 random agents to establish baseline
+Purpose: Verify that with equally skilled random agents, win rates approach 25%
+Probability Notes: 
+    - Null hypothesis: Each agent has equal probability of winning
+    - For n=1000 games:
+        * Expected wins per agent = 250
+        * X ~ Binomial(n=1000, p=0.25)
+        * Standard deviation = √(1000 * 0.25 * 0.75) ≈ 13.7
+        * 95% confidence interval: 250 ± (1.96 * 13.7) ≈ [223, 277]
+    - Chi-square test for uniformity:
+        * H₀: All agents have equal win probability
+        * χ² critical value (α=0.05, df=3) = 7.815
+        * Reject H₀ if χ² > 7.815
+Command: python simulate_game.py --mode sim --rounds 1000 --random-agents 4 --plt-suffix control_4random
+
+TestName: Control_4Informed
+Description: Control test with 4 informed agents
+Purpose: Establish baseline performance when all agents use probability calculations
+Probability Notes:
+    - Win rate distribution should match Control_4Random
+    - Key probability metrics:
+        * Each agent calculates P(X ≥ k) where X ~ Binomial(n=15, p=1/6)
+        * Optimal bluff threshold determined by:
+            P(bluff) > P(best_alternative_move)
+    - Expected improvements over random:
+        * Bluff call accuracy: ~70% (based on binomial thresholds)
+        * Bid optimization: Bids with P(success) > 0.5
+        * Survival time: μ + σ over random baseline
+Command: python simulate_game.py --mode sim --rounds 1000 --informed-agents 4 --plt-suffix control_4informed
+
+Test Suite 2: Probability vs Random
+---------------------------------
+
+TestName: Informed_vs_Random_1v3
+Description: One informed agent versus three random agents
+Purpose: Demonstrate the power of probability-based decision making
+Probability Notes: 
+    - Informed agent should win significantly more than 25%
+    - Expected win rate calculation:
+        * Random agents make valid moves only (enforced by game rules)
+        * Informed agent advantages:
+            - Knows 5 dice (25% of total information)
+            - For remaining 15 dice, can calculate P(X ≥ k) where:
+                * X ~ Binomial(n=15, p=1/6) for any specific face value
+                * k = required successes (claimed - observed)
+            - Makes optimal decisions when P(bluff) > P_best_move
+        * Theoretical win rate: 30-35% based on binomial probability advantage
+        * Statistical significance:
+            - n=1000 games, H₀: p=0.25
+            - Standard deviation = √(1000 * 0.25 * 0.75) ≈ 13.7
+            - For p<0.01, need z > 2.576
+            - Therefore, need wins > 285 (28.5%)
+Command: python simulate_game.py --mode sim --rounds 1000 --informed-agents 1 --random-agents 3 --plt-suffix informed_v_random_1v3
+
+TestName: Informed_vs_Random_2v2
+Description: Two informed agents versus two random agents
+Purpose: Show how probability-based agents perform when competing against each other and random agents
+Probability Notes:
+    - Initial state analysis:
+        * Each informed agent knows 5 dice (25% of information)
+        * Combined they know 10 dice (50% of information)
+        * Can calculate P(X ≥ k) for remaining 10 dice
+    - Expected win distribution:
+        * Combined informed win rate: 60-65%
+            - Based on information advantage (50% known dice)
+            - Enhanced by probability-based decision making
+        * Individual informed agent: 30-32.5%
+        * Individual random agent: 17.5-20%
+    - Statistical significance:
+        * n=1000 games
+        * H₀: Equal win rates (25% each)
+        * For combined informed > 50%:
+            - z = (500 - 250)/(√(1000 * 0.25 * 0.75)) ≈ 18.3
+            - p < 0.0001
+Command: python simulate_game.py --mode sim --rounds 1000 --informed-agents 2 --random-agents 2 --plt-suffix informed_v_random_2v2
+
+Test Suite 3: Adaptive Intelligence
+--------------------------------
+
+TestName: Adaptive_vs_Informed_1v3
+Description: One adaptive agent versus three informed agents
+Purpose: Test if adaptive learning can outperform pure probability-based decisions
+Probability Notes:
+    - Baseline probability calculations same as informed agents
+    - Learning advantage calculation:
+        * Initial state: P(win) ≈ 25% (same as informed)
+        * For each opponent i, learns:
+            P(bluff|player_i) = bluffs_i/total_moves_i
+            P(threshold_i) = successful_bluffs_i/total_bluffs_i
+        * Adjusts own threshold:
+            new_threshold = base_threshold * (1 + learning_rate * Δperformance)
+    - Expected learning curve:
+        * Phase 1 (0-500 games): 25% win rate
+        * Phase 2 (501-1000 games): 25-30% win rate
+        * Phase 3 (1001-1500 games): 30-35% win rate
+        * Phase 4 (1501-2000 games): 35-40% win rate
+    - Statistical significance:
+        * Compare win rates between phases using z-test
+        * H₀: No improvement between phases
+        * Required z > 2.576 for p < 0.01
+Command: python simulate_game.py --mode sim --rounds 2000 --adaptive-agents 1 --informed-agents 3 --plt-suffix adaptive_v_informed_1v3
+
+TestName: Adaptive_vs_Random_1v3
+Description: One adaptive agent versus three random agents
+Purpose: Benchmark adaptive learning against baseline random behavior
+Probability Notes:
+    - Initial probability advantage:
+        * Knows 5 dice (25% of information)
+        * Can calculate P(X ≥ k) for remaining 15 dice
+    - Learning enhancement:
+        * Random agents have fixed P(bluff) ≈ 0.2
+        * Adaptive agent learns this pattern
+        * Optimal threshold approaches:
+            threshold = min(P) where P(bluff|random_agent) > P(valid_move)
+    - Expected win rate progression:
+        * Initial: 30-35% (probability advantage)
+        * After learning: 45-50% (probability + pattern exploitation)
+    - Statistical validation:
+        * H₀: Win rate = initial rate (30%)
+        * n=1000 games
+        * For p<0.01, need wins > 300 + (2.576 * √(1000 * 0.3 * 0.7))
+Command: python simulate_game.py --mode sim --rounds 2000 --adaptive-agents 1 --random-agents 3 --plt-suffix adaptive_v_random_1v3
+
+Test Suite 4: LLM (Human-like) Performance
+----------------------------------------
+
+TestName: LLM_vs_Random_1v3
+Description: One LLM agent versus three random agents
+Purpose: Establish baseline for "human-like" reasoning against random play
+Probability Notes:
+    - LLM decision making model:
+        * No explicit probability calculations
+        * Heuristic-based reasoning
+        * Pattern recognition capabilities
+    - Expected performance:
+        * Better than random (>25%)
+        * Worse than informed (≈30%)
+        * Win rate: 27-32%
+    - Statistical analysis:
+        * H₀: LLM performs at random level (25%)
+        * n=100 games (limited by API costs)
+        * For p<0.05, need wins > 25 + (1.96 * √(100 * 0.25 * 0.75))
+Command: python simulate_game.py --mode sim --rounds 1000 --llm-agents 1 --random-agents 3 --plt-suffix llm_v_random_1v3
+
+TestName: LLM_vs_Informed_1v3
+Description: One LLM agent versus three informed agents
+Purpose: Compare human-like reasoning to probability-based decision making
+Probability Notes:
+    - Disadvantages vs informed agents:
+        * No explicit P(X ≥ k) calculations given as system prompt
+        * Cannot compute exact binomial probabilities, or can it? Will monitor reasoning output.
+    - Advantages:
+        * Pattern recognition
+        * Strategic adaptation
+    - Expected performance:
+        * Base win rate: 15-20%
+        * H₀: LLM performs at random level (25%)
+        * H₁: LLM performs worse than random
+        * For n=100, p<0.05:
+            z = (wins - 25)/(√(100 * 0.25 * 0.75))
+Command: python simulate_game.py --mode sim --rounds 1000 --llm-agents 1 --informed-agents 3 --plt-suffix llm_v_informed_1v3
+
+Test Suite 5: Mixed Environment Tests
+----------------------------------
+
+TestName: Mixed_OneEach
+Description: One of each agent type competing
+Purpose: Compare all agent types in direct competition
+Probability Notes:
+    - Complex probability space:
+        * Each agent has different decision model
+        * Adaptive agent learns 3 different patterns
+        * Informed agent calculates P(X ≥ k) for 15 dice
+    - Expected hierarchy:
+        * Adaptive: 35% (probability + learning)
+        * Informed: 30% (pure probability)
+        * LLM: 20% (heuristic reasoning)
+        * Random: 15% (baseline)
+    - Statistical validation:
+        * H₀: Equal performance (25% each)
+        * n=500 games
+        * χ² test for distribution
+        * Critical value (α=0.05, df=3) = 7.815
+Command: python simulate_game.py --mode sim --rounds 1000 --random-agents 1 --informed-agents 1 --adaptive-agents 1 --llm-agents 1 --plt-suffix mixed_one_each
+
+TestName: Mixed_TwoEach
+Description: Two of each agent type competing (8 total)
+Purpose: Test strategies in a larger game with more complex probability space
+Probability Notes:
+    - Probability space complexity:
+        * 40 total dice (8 players * 5 dice)
+        * P(X ≥ k) calculations where:
+            X ~ Binomial(n=35, p=1/6) for informed agents
+    - Expected pair performance:
+        * Adaptive pair: 35-40%
+            Based on: P(win|adaptive) * 2
+        * Informed pair: 25-30%
+            Based on: P(X ≥ k) advantage * 2
+        * LLM pair: 20-25%
+            Based on: Heuristic reasoning * 2
+        * Random pair: 10-15%
+            Based on: Baseline probability
+    - Statistical analysis:
+        * H₀: Equal pair performance (25% each)
+        * n=500 games
+        * χ² test with df=3
+Command: python simulate_game.py --mode sim --rounds 1000 --random-agents 2 --informed-agents 2 --adaptive-agents 2 --llm-agents 2 --plt-suffix mixed_two_each
+
+Test Suite 6: Long-Term Learning
+------------------------------
+
+TestName: Adaptive_Learning_Marathon
+Description: Extended game series with adaptive agents to test learning depth
+Purpose: Analyze how well adaptive agents improve over many iterations
+Probability Notes:
+    - Learning model analysis:
+        * Base probability calculations:
+            P(X ≥ k) where X ~ Binomial(n=15, p=1/6)
+        * Pattern learning:
+            P(bluff|opponent) = bluffs/total_moves
+        * Threshold adaptation:
+            threshold_t+1 = threshold_t * (1 + α * Δperformance)
+            where α = learning_rate
+    - Phase-wise expectations:
+        * Phase 1 (Games 1-500):
+            - Win rate: μ₁ = 25%, σ₁ = high
+            - Learning: Basic probability
+        * Phase 2 (Games 501-1000):
+            - Win rate: μ₂ = μ₁ + 5%, σ₂ < σ₁
+            - Learning: Pattern recognition
+        * Phase 3 (Games 1001-1500):
+            - Win rate: μ₃ = μ₂ + 5%, σ₃ < σ₂
+            - Learning: Strategy refinement
+        * Phase 4 (Games 1501-2000):
+            - Win rate: μ₄ = μ₃ + 5%, σ₄ < σ₃
+            - Learning: Optimization
+    - Statistical validation:
+        * Between phases:
+            z = (μᵢ - μᵢ₋₁)/(√(σᵢ² + σᵢ₋₁²)/500)
+        * H₀: No improvement between phases
+        * Required: z > 2.576 for p < 0.01
+Command: python simulate_game.py --mode sim --rounds 2000 --adaptive-agents 2 --informed-agents 2 --plt-suffix adaptive_learning_marathon
+
+Note: For all tests:
+- Use --verbose 0 to minimize output and speed up simulation
+- Each test generates plots and statistics in the reports/[plt-suffix] directory
+- LLM tests use fewer rounds due to API costs and time constraints
+- Consider running each test multiple times to ensure statistical significance
+- Standard deviation and confidence intervals assume independent trials
+- Win rates may vary based on specific implementation details
+- All binomial calculations assume fair dice (p=1/6 for each face)
+- Statistical tests use standard α levels (0.05 and 0.01)

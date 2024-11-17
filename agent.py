@@ -24,10 +24,11 @@ AGENT_COLORS = [
 class LiarsDiceAgent(ABC):
     """Abstract base class for Liar's Dice agents"""
     
-    def __init__(self, name: str, color_idx: int = 0):
+    def __init__(self, name: str, color_idx: int = 0, verbose: int = 0):
         self.name = name
         self.dice: List[int] = []
         self.color = AGENT_COLORS[color_idx % len(AGENT_COLORS)]
+        self.verbose = verbose
         
     @abstractmethod
     def make_move(self, environment) -> Dict:
@@ -78,91 +79,95 @@ class InformedAgent(LiarsDiceAgent):
         super().__init__(name, color_idx)
         from liars_dice_calculator import liars_dice_calc
         self.calc_probability = liars_dice_calc
+        self.last_probability = None  # Track last calculated probability
     
     def make_move(self, environment) -> Dict:
         game_state = environment.get_game_state()
         last_move = game_state.get('last_move')
         valid_moves = game_state.get('valid_moves', [])
         
-        P_bluff = 0.0  # Probability that the last bid was a bluff
+
         
+        # First, calculate P_bluff for the last move
+        P_bluff = 0.0
         if last_move:
-            # Calculate the probability that the last bid is truthful
             face_value = last_move['face_value']
             quantity = last_move['quantity']
-            
-            # Number of the bid's face_value dice the agent holds
             my_relevant_dice = self.dice.count(face_value)
-            
-            # Remaining dice in play
+            required_successes = quantity - my_relevant_dice
             remaining_dice = game_state['total_dice'] - len(self.dice)
             
-            # Required dice from others to make the bid true
-            required_successes = quantity - my_relevant_dice
-            
             if required_successes <= 0:
-                # Agent already holds enough dice to confirm the bid
-                P_truthful = 1.0
+                # We can verify the bid is true
+                P_bluff = 0.0
             else:
-                # Calculate probability that at least 'required_successes' dice show 'face_value'
+                # Calculate probability that at least required_successes dice show face_value
                 P_truthful = self.calc_probability(
                     D=remaining_dice,
                     p=1/6,
                     c=required_successes,
                     k=0
                 )
-            
-            # Probability that the last bid was a bluff
-            P_bluff = 1 - P_truthful
+                P_bluff = 1 - P_truthful
         
-        # Evaluate all valid moves and calculate their probabilities
-        move_probabilities = []
+        # Store the probability for metrics
+        self.last_probability = P_bluff
+        
+        # Evaluate all moves and store their probabilities
+        move_evaluations = []
+        
         for move in valid_moves:
-            if move.get('bluff', False):
-                # For bluff calls, use P_bluff as the probability
-                move_probabilities.append({
-                    'move': move,
-                    'probability': P_bluff
-                })
+            if move['bluff']:
+                move_evaluations.append((move, P_bluff))
+                continue
+                
+            face_value = move['face_value']
+            quantity = move['quantity']
+            my_relevant_dice = self.dice.count(face_value)
+            required_successes = quantity - my_relevant_dice
+            remaining_dice = game_state['total_dice'] - len(self.dice)
+            
+            if required_successes <= 0:
+                # We have all the dice we need - this should be our preferred move
+                probability = 2.0  # Much higher bonus for having all needed dice
+                if my_relevant_dice > quantity:
+                    # We have even more than needed!
+                    probability = 3.0
             else:
-                face_value = move['face_value']
-                quantity = move['quantity']
-                
-                # Number of the bid's face_value dice the agent holds
-                my_relevant_dice = self.dice.count(face_value)
-                
-                # Remaining dice in play
-                remaining_dice = game_state['total_dice'] - len(self.dice)
-                
-                # Required dice from others to make the bid true
-                required_successes = quantity - my_relevant_dice
-                
-                if required_successes <= 0:
-                    # We have enough dice ourselves - this is a great move!
-                    probability = 1.2  # Bonus for having the dice
-                else:
-                    probability = self.calc_probability(
-                        D=remaining_dice,
-                        p=1/6,
-                        c=required_successes,
-                        k=0
-                    )
-                
-                move_probabilities.append({
-                    'move': move,
-                    'probability': probability
-                })
+                probability = self.calc_probability(
+                    D=remaining_dice,
+                    p=1/6,
+                    c=required_successes,
+                    k=0
+                )
+            
+            # Prefer moves that don't increase quantity too much
+            if last_move and quantity > last_move['quantity']:
+                probability *= 0.95  # Small penalty for increasing quantity
+            
+            move_evaluations.append((move, probability))
         
-        # Select the move with the highest probability
-        best_move_entry = max(move_probabilities, key=lambda x: x['probability'])
+        # Sort moves by probability and show top 5
+        move_evaluations.sort(key=lambda x: x[1], reverse=True)
+
+        if self.verbose >= 2:
+            print("\nEvaluating moves:")
+            for move, prob in move_evaluations:
+                if move['bluff']:
+                    print(f"  Call bluff: {prob:.2%}")
+                else:
+                    print(f"  {move['quantity']} {move['face_value']}s: {prob:.2%}")
+        
+        # Select best move
+        best_move, best_probability = move_evaluations[0]
         
         # Add reasoning to the move
-        best_move_entry['move']['reasoning'] = (
-            f"Move probability: {best_move_entry['probability']:.2%}. "
-            f"Bluff probability: {P_bluff:.2%}"
-        )
+        if best_move['bluff']:
+            best_move['reasoning'] = f"Calling bluff. probability: {best_probability:.2%}. Best alternative probability: {max(p for m, p in move_evaluations if not m['bluff']):.2%}"
+        else:
+            best_move['reasoning'] = f"Move probability: {best_probability:.2%}. Bluff probability: {P_bluff:.2%}"
         
-        return best_move_entry['move']
+        return best_move
 
 class AdaptiveAgent(LiarsDiceAgent):
     """Agent that adapts its strategy based on game state and player behavior patterns"""
@@ -171,11 +176,11 @@ class AdaptiveAgent(LiarsDiceAgent):
         super().__init__(name, color_idx)
         from liars_dice_calculator import liars_dice_calc
         self.calc_probability = liars_dice_calc
-        # Track player behavior
         self.player_history = {}  # {player_idx: [moves]}
         self.bluff_threshold = 0.4  # Adjustable threshold for calling bluffs
         self.aggressive_factor = 1.2  # How aggressive to be with bids
         self.learning_rate = 0.1  # How quickly to adjust to player patterns
+        self.predicted_bluff_rate = None  # Track predicted bluff rate
     
     def _analyze_player_patterns(self, player_idx: int) -> Dict:
         """Analyze a player's bidding patterns"""
@@ -255,14 +260,14 @@ class AdaptiveAgent(LiarsDiceAgent):
             face_value = last_move['face_value']
             quantity = last_move['quantity']
             my_relevant_dice = self.dice.count(face_value)
-            remaining_dice = game_state['total_dice'] - len(self.dice)
             required_successes = quantity - my_relevant_dice
             
             if required_successes <= 0:
                 P_truthful = 1.0
             else:
+                # Calculate probability that at least required_successes dice show face_value
                 P_truthful = self.calc_probability(
-                    D=remaining_dice,
+                    D=game_state['total_dice'] - len(self.dice),
                     p=1/6,
                     c=required_successes,
                     k=0
@@ -288,14 +293,13 @@ class AdaptiveAgent(LiarsDiceAgent):
                 face_value = move['face_value']
                 quantity = move['quantity']
                 my_relevant_dice = self.dice.count(face_value)
-                remaining_dice = game_state['total_dice'] - len(self.dice)
                 required_successes = quantity - my_relevant_dice
                 
                 if required_successes <= 0:
                     probability = 1.0
                 else:
                     probability = self.calc_probability(
-                        D=remaining_dice,
+                        D=game_state['total_dice'] - len(self.dice),
                         p=1/6,
                         c=required_successes,
                         k=0
@@ -335,6 +339,7 @@ class LLMAgent(LiarsDiceAgent):
         super().__init__(name, color_idx)
         self.provider = provider
         self.system_prompt = self._load_system_prompt(system_prompt)
+        self.last_reasoning = None  # Track last reasoning
         
         if provider == 'openai':
             self.client = OpenAI(api_key=api_key)
@@ -379,6 +384,10 @@ class LLMAgent(LiarsDiceAgent):
                     response_format=LiarsMove,
                 )
                 move = completion.choices[0].message.parsed
+                self.last_reasoning = {
+                    "decision_type": move.reasoning,
+                    "move": move.dict()
+                }
                 return {
                     'quantity': move.quantity,
                     'face_value': move.face_value,
