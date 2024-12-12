@@ -27,8 +27,8 @@ class GameMetrics:
     elimination_order: List[str] = field(default_factory=list)
     
     # New metrics for enhanced analysis
-    dice_remaining_successful_bluff: Dict[str, List[int]] = field(default_factory=lambda: defaultdict(list))
-    dice_remaining_failed_bluff: Dict[str, List[int]] = field(default_factory=lambda: defaultdict(list))
+    prev_bid_quantity_successful_bluff: Dict[str, List[int]] = field(default_factory=lambda: defaultdict(list))
+    prev_bid_quantity_failed_bluff: Dict[str, List[int]] = field(default_factory=lambda: defaultdict(list))
     predicted_probability: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
     actual_outcome: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
     bluff_threshold: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
@@ -84,8 +84,8 @@ class SimulationMetrics:
                 'elimination_order': game.elimination_order,
                 
                 # List-type metrics
-                'dice_remaining_successful_bluff': game.dice_remaining_successful_bluff.get(game.winner, []),
-                'dice_remaining_failed_bluff': game.dice_remaining_failed_bluff.get(game.winner, []),
+                'prev_bid_quantity_successful_bluff': game.prev_bid_quantity_successful_bluff.get(game.winner, []),
+                'prev_bid_quantity_failed_bluff': game.prev_bid_quantity_failed_bluff.get(game.winner, []),
                 'predicted_probability': game.predicted_probability.get(game.winner, []),
                 'actual_outcome': game.actual_outcome.get(game.winner, []),
                 'bluff_threshold': game.bluff_threshold.get(game.winner, []),
@@ -116,8 +116,8 @@ class SimulationMetrics:
                         'elimination_order': game.elimination_order,
                         
                         # List-type metrics
-                        'dice_remaining_successful_bluff': game.dice_remaining_successful_bluff.get(agent_name, []),
-                        'dice_remaining_failed_bluff': game.dice_remaining_failed_bluff.get(agent_name, []),
+                        'prev_bid_quantity_successful_bluff': game.prev_bid_quantity_successful_bluff.get(agent_name, []),
+                        'prev_bid_quantity_failed_bluff': game.prev_bid_quantity_failed_bluff.get(agent_name, []),
                         'predicted_probability': game.predicted_probability.get(agent_name, []),
                         'actual_outcome': game.actual_outcome.get(agent_name, []),
                         'bluff_threshold': game.bluff_threshold.get(agent_name, []),
@@ -133,7 +133,7 @@ class SimulationMetrics:
         #     print("\nDataFrame Info:")
         #     print(df.info())
         #     print("\nSample of list-type metrics:")
-        #     list_cols = ['dice_remaining_successful_bluff', 'dice_remaining_failed_bluff',
+        #     list_cols = ['prev_bid_quantity_successful_bluff', 'prev_bid_quantity_failed_bluff',
         #                 'predicted_probability', 'actual_outcome', 'bluff_threshold',
         #                 'predicted_bluff_rate', 'actual_bluff_rate', 'decision_type',
         #                 'successful_move']
@@ -168,13 +168,23 @@ class SimulationMetrics:
     def plot_win_rates(self, output_dir: str, plt_suffix: str):
         """Plot win rates by agent type."""
         df = self.to_dataframe()
-        agent_types = sorted(df['agent_type'].unique())
-        colors = self.get_plot_colors()
-        suffix = f"_{plt_suffix}" if plt_suffix else ""
         
-        plt.figure(figsize=(10, 6))
-        win_rates = df.groupby('agent_type')['won'].mean() * 100  # Convert to percentage
+        # First, get total games per agent type
+        games_per_type = df.groupby('agent_type').size()
+        
+        # Get wins per agent type
+        wins_per_type = df[df['won'] == 1].groupby('agent_type').size()
+        
+        # Calculate win rate as percentage
+        win_rates = (wins_per_type / games_per_type * 100).fillna(0)
+        
+        # Sort by agent types
+        agent_types = sorted(df['agent_type'].unique())
         win_rates = win_rates.reindex(agent_types)
+        
+        # Plot
+        plt.figure(figsize=(10, 6))
+        colors = self.get_plot_colors()
         ax = win_rates.plot(kind='bar', color=[colors[i] for i in range(len(agent_types))])
         plt.title('Win Rates by Agent Type', pad=20, fontsize=12, fontweight='bold')
         plt.ylabel('Win Rate (%)')
@@ -184,7 +194,7 @@ class SimulationMetrics:
             ax.text(i, v + 1, f'{v:.1f}%', ha='center', fontweight='bold')
         
         plt.tight_layout()
-        plt.savefig(f'{output_dir}/win_rates{suffix}.png', dpi=300, bbox_inches='tight')
+        plt.savefig(f'{output_dir}/win_rates{plt_suffix}.png', dpi=300, bbox_inches='tight')
         plt.close()
 
     def plot_survival_time(self, output_dir: str, plt_suffix: str):
@@ -217,44 +227,48 @@ class SimulationMetrics:
         colors = self.get_plot_colors()
         suffix = f"_{plt_suffix}" if plt_suffix else ""
         
-        fig, ax = plt.subplots(figsize=(12, 8))
+        # Increase figure width to accommodate legend
+        fig, ax = plt.subplots(figsize=(14, 8))
         
         metrics_df = df.groupby('agent_type').agg({
             'bluff_rate': 'mean',
             'successful_bluffs': 'mean',
-            'successful_catches': 'mean'
+            'failed_bluffs': 'mean',
+            'successful_catches': 'mean',
+            'failed_catches': 'mean'
         })
         metrics_df = metrics_df.reindex(agent_types)
         
-        bar_width = 0.25
+        bar_width = 0.15
         x = np.arange(len(agent_types))
         
-        ax.bar(x - bar_width, metrics_df['bluff_rate'], bar_width, 
-               label='Bluff Rate', color=colors[0])
-        ax.bar(x, metrics_df['successful_bluffs'], bar_width,
-               label='Successful Bluffs per Game', color=colors[1])
-        ax.bar(x + bar_width, metrics_df['successful_catches'], bar_width,
-               label='Successful Catches per Game', color=colors[2])
+        # Plot bars
+        metrics = ['bluff_rate', 'successful_bluffs', 'failed_bluffs', 'successful_catches', 'failed_catches']
+        labels = ['Call Bluff Rate', 'Successful Bluffs/Game', 'Failed Bluffs/Game', 'Successful Catches/Game', 'Failed Catches/Game']
         
+        for i, (metric, label) in enumerate(zip(metrics, labels)):
+            offset = (i - 1.5) * bar_width
+            bars = ax.bar(x + offset, metrics_df[metric], bar_width,
+                         label=label, color=plt.cm.Set2(i/4))
+            
+            # Add value labels on bars
+            for j, bar in enumerate(bars):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar_width/2, height + 0.01,
+                       f'{height:.1f}', ha='center', va='bottom',
+                       fontsize=8, fontweight='bold')
+        
+        # Customize plot
         ax.set_title('Bluffing Behavior by Agent Type', pad=20, fontsize=12, fontweight='bold')
-        ax.set_ylabel('Value')
+        ax.set_xlabel('Agent Type')
+        ax.set_ylabel('Average per Game')
+        
+        # Set x-axis labels
         ax.set_xticks(x)
         ax.set_xticklabels(agent_types)
         
-        for i in range(len(metrics_df.index)):
-            bluff_rate = metrics_df['bluff_rate'].iloc[i]
-            ax.text(i - bar_width, bluff_rate + 0.01, f'{bluff_rate*100:.1f}%', 
-                   ha='center', va='bottom', fontweight='bold')
-            
-            sbluffs = metrics_df['successful_bluffs'].iloc[i]
-            ax.text(i, sbluffs + 0.01, f'{sbluffs:.1f}', 
-                   ha='center', va='bottom', fontweight='bold')
-            
-            scatches = metrics_df['successful_catches'].iloc[i]
-            ax.text(i + bar_width, scatches + 0.01, f'{scatches:.1f}', 
-                   ha='center', va='bottom', fontweight='bold')
-        
-        ax.legend(bbox_to_anchor=(0.98, 0.98), loc='upper right',
+        # Add legend
+        ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left',
                  frameon=True, facecolor='white', framealpha=1)
         
         plt.tight_layout()
@@ -522,9 +536,19 @@ class SimulationMetrics:
         df = self.to_dataframe()
         plt.figure(figsize=(10, 6))
         
-        for agent_type in sorted(df['agent_type'].unique()):
-            agent_data = df[df['agent_type'] == agent_type]
-            sns.kdeplot(data=agent_data['avg_bid_quantity'], label=agent_type)
+        for agent_type, agent_data in df.groupby('agent_type'):
+            try:
+                if len(agent_data['avg_bid_quantity'].unique()) > 1:
+                    sns.kdeplot(data=agent_data['avg_bid_quantity'], label=agent_type)
+                else:
+                    # If all values are the same, plot a single vertical line
+                    value = agent_data['avg_bid_quantity'].iloc[0]
+                    plt.axvline(x=value, label=f"{agent_type} (constant={value:.2f})", 
+                              linestyle='--', alpha=0.7)
+            except Exception as e:
+                if self.verbose >= 1:
+                    print(f"Warning: Could not plot distribution for {agent_type}: {str(e)}")
+                continue
         
         plt.title('Bid Quantity Distribution by Agent Type', pad=20, fontsize=12, fontweight='bold')
         plt.xlabel('Average Bid Quantity')
@@ -536,7 +560,8 @@ class SimulationMetrics:
         plt.close()
 
     def plot_bluff_timing(self, output_dir: str, plt_suffix: str):
-        """Plot average number of dice remaining when bluff is called."""
+        """Plot the average quantity of dice that was bid in the previous round when agents call bluff.
+        This helps us understand what bid quantities trigger different agents to call bluff."""
         df = self.to_dataframe()
         
         if df.empty:
@@ -544,25 +569,36 @@ class SimulationMetrics:
                 print("Warning: No data available for bluff timing plot")
             return
             
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(12, 8))  # Made plot larger
         
         # Explode list columns to get individual values
-        success_data = df.explode('dice_remaining_successful_bluff')
-        failed_data = df.explode('dice_remaining_failed_bluff')
+        success_data = df.explode('prev_bid_quantity_successful_bluff')
+        failed_data = df.explode('prev_bid_quantity_failed_bluff')
+        
+        if self.verbose >= 1:
+            print("\nDEBUG: Bluff Timing Data")
+            print("\nSuccessful bluff calls:")
+            for agent_type in df['agent_type'].unique():
+                data = success_data[success_data['agent_type'] == agent_type]['prev_bid_quantity_successful_bluff']
+                print(f"{agent_type}: {list(data)}")
+            print("\nFailed bluff calls:")
+            for agent_type in df['agent_type'].unique():
+                data = failed_data[failed_data['agent_type'] == agent_type]['prev_bid_quantity_failed_bluff']
+                print(f"{agent_type}: {list(data)}")
         
         # Convert to numeric, dropping any non-numeric values
-        success_data['dice_remaining_successful_bluff'] = pd.to_numeric(
-            success_data['dice_remaining_successful_bluff'], 
+        success_data['prev_bid_quantity_successful_bluff'] = pd.to_numeric(
+            success_data['prev_bid_quantity_successful_bluff'], 
             errors='coerce'
         )
-        failed_data['dice_remaining_failed_bluff'] = pd.to_numeric(
-            failed_data['dice_remaining_failed_bluff'], 
+        failed_data['prev_bid_quantity_failed_bluff'] = pd.to_numeric(
+            failed_data['prev_bid_quantity_failed_bluff'], 
             errors='coerce'
         )
         
         # Drop NaN values
-        success_data = success_data.dropna(subset=['dice_remaining_successful_bluff'])
-        failed_data = failed_data.dropna(subset=['dice_remaining_failed_bluff'])
+        success_data = success_data.dropna(subset=['prev_bid_quantity_successful_bluff'])
+        failed_data = failed_data.dropna(subset=['prev_bid_quantity_failed_bluff'])
         
         if success_data.empty and failed_data.empty:
             if self.verbose >= 1:
@@ -570,8 +606,15 @@ class SimulationMetrics:
             return
         
         # Calculate means for each agent type
-        success_means = success_data.groupby('agent_type')['dice_remaining_successful_bluff'].mean()
-        failed_means = failed_data.groupby('agent_type')['dice_remaining_failed_bluff'].mean()
+        success_means = success_data.groupby('agent_type')['prev_bid_quantity_successful_bluff'].mean()
+        failed_means = failed_data.groupby('agent_type')['prev_bid_quantity_failed_bluff'].mean()
+        
+        if self.verbose >= 1:
+            print("\nBluff Timing Statistics:")
+            print("\nSuccessful Bluffs:")
+            print(success_means)
+            print("\nFailed Bluffs:")
+            print(failed_means)
         
         # Get unique agent types and sort them
         agent_types = sorted(df['agent_type'].unique())
@@ -579,8 +622,8 @@ class SimulationMetrics:
         width = 0.35
         
         # Create bars with error bars
-        success_std = success_data.groupby('agent_type')['dice_remaining_successful_bluff'].std()
-        failed_std = failed_data.groupby('agent_type')['dice_remaining_failed_bluff'].std()
+        success_std = success_data.groupby('agent_type')['prev_bid_quantity_successful_bluff'].std()
+        failed_std = failed_data.groupby('agent_type')['prev_bid_quantity_failed_bluff'].std()
         
         plt.bar(x - width/2, 
                [success_means.get(agent, 0) for agent in agent_types], 
@@ -595,32 +638,26 @@ class SimulationMetrics:
                label='Failed Bluff Calls',
                capsize=5)
         
-        plt.title('Average Dice Remaining When Calling Bluff', pad=20, fontsize=12, fontweight='bold')
+        plt.title('Previous Bid Quantities that Trigger Bluff Calls', pad=20, fontsize=12, fontweight='bold')
         plt.xlabel('Agent Type')
-        plt.ylabel('Average Dice Remaining')
+        plt.ylabel('Average Previous Bid Quantity')
         plt.xticks(x, agent_types)
         plt.legend()
         
-        # Add value labels on bars
-        def add_value_labels(x, values, offset):
-            for i, v in enumerate(values):
-                if not np.isnan(v):
-                    plt.text(x[i] + offset, v + 0.1, f'{v:.1f}', 
-                           ha='center', fontsize=8)
-        
-        add_value_labels(x, [success_means.get(agent, 0) for agent in agent_types], -width/2)
-        add_value_labels(x, [failed_means.get(agent, 0) for agent in agent_types], width/2)
+        # Add value labels on bars with more padding
+        for i, agent in enumerate(agent_types):
+            success_val = success_means.get(agent, 0)
+            failed_val = failed_means.get(agent, 0)
+            if success_val > 0:
+                plt.text(i - width/2, success_val + 0.2, f'{success_val:.1f}', 
+                        ha='center', va='bottom')
+            if failed_val > 0:
+                plt.text(i + width/2, failed_val + 0.2, f'{failed_val:.1f}', 
+                        ha='center', va='bottom')
         
         # Add grid for better readability
-        plt.grid(True, alpha=0.3)
+        plt.grid(True, alpha=0.3, axis='y')
         plt.tight_layout()
-        
-        if self.verbose >= 2:
-            print("\nBluff Timing Statistics:")
-            print("\nSuccessful Bluffs:")
-            print(success_means)
-            print("\nFailed Bluffs:")
-            print(failed_means)
         
         suffix = f"_{plt_suffix}" if plt_suffix else ""
         plt.savefig(f'{output_dir}/bluff_timing{suffix}.png', dpi=300, bbox_inches='tight')
@@ -717,6 +754,24 @@ class SimulationMetrics:
         # Filter for Adaptive agents (note: agent type is stored without 'Agent' suffix)
         df_adaptive = df[df['agent_type'] == 'Adaptive'].copy()
         
+        if self.verbose >= 1:
+            print("\nDebugging Adaptive Learning Plot:")
+            print(f"Total agents in data: {len(df['agent_type'].unique())}")
+            print("Agent types present:", df['agent_type'].unique())
+            print(f"Number of adaptive agents found: {len(df_adaptive)}")
+            print("\nSample of adaptive agent data:")
+            if not df_adaptive.empty:
+                print("Predicted bluff rates:", df_adaptive['predicted_bluff_rate'].iloc[0][:5])
+                print("Actual bluff rates:", df_adaptive['actual_bluff_rate'].iloc[0][:5])
+                print("Bluff thresholds:", df_adaptive['bluff_threshold'].iloc[0][:5])
+            if len(df_adaptive) == 0:
+                print("Warning: No adaptive agents found in the data")
+                print("This might happen if:")
+                print("1. No adaptive agents were included in the simulation")
+                print("2. The agent type name doesn't match 'Adaptive'")
+                print("3. The adaptive agent's metrics weren't properly recorded")
+                return
+        
         # Create lists to store exploded data
         game_ids = []
         agent_names = []
@@ -768,64 +823,72 @@ class SimulationMetrics:
             print("\nSample of values:")
             print(df_exploded[['predicted_bluff_rate', 'actual_bluff_rate', 'bluff_threshold']].head())
         
-        # Create figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
-        fig.suptitle('Adaptive Agent Learning Analysis', fontsize=14, fontweight='bold', y=0.95)
+        # Create figure with two subplots with increased height and spacing
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 14), height_ratios=[1, 1])
+        
+        # Add super title with more padding
+        fig.suptitle('Adaptive Agent Learning Analysis', 
+                    fontsize=14, 
+                    fontweight='bold', 
+                    y=0.98)  # Move title up
+        
+        # Add more space between subplots
+        plt.subplots_adjust(hspace=0.3)
         
         # Plot 1: Learning Progression Over Time
-        # Add move number within each game
+        # First sort by game_id and create move numbers
+        df_exploded = df_exploded.sort_values('game_id')
         df_exploded['move_number'] = df_exploded.groupby('game_id').cumcount() + 1
-        
-        # Sort by game and move number for continuous progression
         df_exploded = df_exploded.sort_values(['game_id', 'move_number'])
-        df_exploded['global_move'] = range(1, len(df_exploded) + 1)
+        df_exploded['global_move_number'] = range(1, len(df_exploded) + 1)
         
-        # Bin data into intervals for cleaner visualization
-        n_bins = 20  # Adjust number of bins as needed
-        df_exploded['bin'] = pd.qcut(df_exploded['global_move'], n_bins, labels=False)
+        # Create bins of 20 moves
+        bin_size = 20
+        df_exploded['move_bin'] = df_exploded['global_move_number'].apply(lambda x: ((x-1) // bin_size) * bin_size + bin_size/2)
         
-        # Calculate binned statistics
-        df_binned = df_exploded.groupby('bin').agg({
-            'global_move': ['mean', 'std'],
+        # Calculate statistics for each bin
+        binned_stats = df_exploded.groupby('move_bin').agg({
             'predicted_bluff_rate': ['mean', 'std'],
             'actual_bluff_rate': ['mean', 'std'],
             'bluff_threshold': ['mean', 'std']
-        })
+        }).reset_index()
         
         # Flatten column names
-        df_binned.columns = ['_'.join(col).strip() for col in df_binned.columns.values]
+        binned_stats.columns = ['move_bin', 
+                              'predicted_mean', 'predicted_std',
+                              'actual_mean', 'actual_std',
+                              'threshold_mean', 'threshold_std']
         
-        # Plot smoothed trends
-        ax1.plot(df_binned['global_move_mean'], df_binned['predicted_bluff_rate_mean'],
-                label='Predicted Bluff Rate', color='blue', linewidth=2)
-        ax1.plot(df_binned['global_move_mean'], df_binned['actual_bluff_rate_mean'],
-                label='Actual Bluff Rate', color='orange', linewidth=2)
-        ax1.plot(df_binned['global_move_mean'], df_binned['bluff_threshold_mean'],
-                label='Bluff Threshold', color='green', linewidth=2)
+        # Plot main lines using binned means
+        ax1.plot(binned_stats['move_bin'], binned_stats['predicted_mean'],
+                label='Predicted Bluff Rate', color='blue', linewidth=2, alpha=0.7)
+        ax1.plot(binned_stats['move_bin'], binned_stats['actual_mean'],
+                label='Actual Bluff Rate', color='orange', linewidth=2, alpha=0.7)
+        ax1.plot(binned_stats['move_bin'], binned_stats['threshold_mean'],
+                label='Bluff Threshold', color='green', linewidth=2, alpha=0.7)
+        
+        # Add confidence intervals
+        for col_mean, col_std, color in [
+            ('predicted_mean', 'predicted_std', 'blue'),
+            ('actual_mean', 'actual_std', 'orange'),
+            ('threshold_mean', 'threshold_std', 'green')
+        ]:
+            ax1.fill_between(binned_stats['move_bin'],
+                           binned_stats[col_mean] - binned_stats[col_std],
+                           binned_stats[col_mean] + binned_stats[col_std],
+                           alpha=0.1, color=color)
         
         # Add light scatter points for raw values
-        ax1.scatter(df_exploded['global_move'], df_exploded['predicted_bluff_rate'],
+        ax1.scatter(df_exploded['global_move_number'], df_exploded['predicted_bluff_rate'],
                    alpha=0.1, color='blue', s=5)
-        ax1.scatter(df_exploded['global_move'], df_exploded['actual_bluff_rate'],
+        ax1.scatter(df_exploded['global_move_number'], df_exploded['actual_bluff_rate'],
                    alpha=0.1, color='orange', s=5)
-        ax1.scatter(df_exploded['global_move'], df_exploded['bluff_threshold'],
+        ax1.scatter(df_exploded['global_move_number'], df_exploded['bluff_threshold'],
                    alpha=0.1, color='green', s=5)
         
-        # Add shaded confidence intervals where std > 0
-        for col, color in [('predicted_bluff_rate', 'blue'), 
-                         ('actual_bluff_rate', 'orange'),
-                         ('bluff_threshold', 'green')]:
-            std_col = f'{col}_std'
-            mean_col = f'{col}_mean'
-            mask = df_binned[std_col] > 0
-            if mask.any():
-                ax1.fill_between(df_binned.loc[mask, 'global_move_mean'],
-                               df_binned.loc[mask, mean_col] - df_binned.loc[mask, std_col],
-                               df_binned.loc[mask, mean_col] + df_binned.loc[mask, std_col],
-                               alpha=0.1, color=color)
-        
-        # Add vertical lines to separate games
-        for game_end in df_exploded.groupby('game_id')['global_move'].max():
+        # Add vertical lines at game boundaries
+        game_boundaries = df_exploded.groupby('game_id')['global_move_number'].last()
+        for game_end in game_boundaries:
             ax1.axvline(x=game_end, color='gray', linestyle='--', alpha=0.2)
         
         ax1.set_title('Learning Progression Over Time')
@@ -1013,6 +1076,7 @@ class SimulationMetrics:
         
         # Generate all plots
         self.plot_win_rates(output_dir, '')
+        self.plot_individual_win_rates(output_dir, '')  # Add the new plot
         self.plot_survival_time(output_dir, '')
         self.plot_bluffing_behavior(output_dir, '')
         self.plot_bid_patterns(output_dir, '')
@@ -1046,3 +1110,62 @@ class SimulationMetrics:
         # Save summary to CSV
         for name, stats in summary.items():
             stats.to_csv(f'{output_dir}/{name.lower().replace(" ", "_")}.csv')
+
+    def plot_individual_win_rates(self, output_dir: str, plt_suffix: str):
+        """Plot win rates for each individual agent."""
+        df = self.to_dataframe()
+        
+        # Get total games count
+        total_games = len(self.games)
+        
+        # Calculate wins per agent
+        wins_per_agent = df[df['won'] == 1].groupby(['agent_name', 'agent_type']).size()
+        
+        # Calculate win rate as percentage
+        win_rates = (wins_per_agent / total_games * 100).fillna(0)
+        
+        # Create a DataFrame with agent names and their types
+        win_rates_df = pd.DataFrame(win_rates).reset_index()
+        win_rates_df.columns = ['agent_name', 'agent_type', 'win_rate']
+        
+        # Sort by agent type and win rate
+        win_rates_df = win_rates_df.sort_values(['agent_type', 'win_rate'], ascending=[True, False])
+        
+        # Plot
+        plt.figure(figsize=(12, 6))
+        colors = self.get_plot_colors()
+        
+        # Create color mapping for agent types
+        agent_types = sorted(df['agent_type'].unique())
+        color_dict = {agent_type: colors[i] for i, agent_type in enumerate(agent_types)}
+        bar_colors = [color_dict[agent_type] for agent_type in win_rates_df['agent_type']]
+        
+        ax = plt.gca()
+        bars = ax.bar(range(len(win_rates_df)), win_rates_df['win_rate'], color=bar_colors)
+        
+        # Customize the plot
+        plt.title('Individual Agent Win Rates', pad=20, fontsize=12, fontweight='bold')
+        plt.ylabel('Win Rate (%)')
+        plt.xlabel('Agent')
+        
+        # Set x-axis labels
+        plt.xticks(range(len(win_rates_df)), 
+                  win_rates_df['agent_name'],  # Just use agent names without the type
+                  rotation=45, ha='right')
+        
+        # Add value labels on bars
+        for i, bar in enumerate(bars):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2, height + 0.5,
+                   f'{height:.1f}%', ha='center', va='bottom', fontweight='bold')
+        
+        # Add legend for agent types
+        legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color_dict[agent_type], 
+                                       label=agent_type) for agent_type in agent_types]
+        plt.legend(handles=legend_elements, title='Agent Types', 
+                  bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        plt.tight_layout()
+        suffix = f"_{plt_suffix}" if plt_suffix else ""
+        plt.savefig(f'{output_dir}/individual_win_rates{suffix}.png', dpi=300, bbox_inches='tight')
+        plt.close()

@@ -112,8 +112,8 @@ class TestRunner:
                 "name": "Adaptive_Learning_Marathon",
                 "description": "Extended game series with adaptive agents",
                 "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--adaptive-agents", "2",
-                           "--informed-agents", "2",
+                           "--adaptive-agents", "1",
+                           "--llm-agents", "3",
                            "--rounds", str(self.test_rounds),
                            "--plt-suffix", "adaptive_learning_marathon"]
             }

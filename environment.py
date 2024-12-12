@@ -36,8 +36,8 @@ class Environment:
         self._rounds = 0
         
         # New metrics for enhanced analysis
-        self._dice_remaining_successful_bluff = defaultdict(list)
-        self._dice_remaining_failed_bluff = defaultdict(list)
+        self._prev_bid_quantity_successful_bluff = defaultdict(list)
+        self._prev_bid_quantity_failed_bluff = defaultdict(list)
         self._predicted_probability = defaultdict(list)
         self._actual_outcome = defaultdict(list)
         self._bluff_threshold = defaultdict(list)
@@ -124,14 +124,14 @@ class Environment:
             'current_player': self.current_player_idx
         }
 
-    def make_move(self, player_idx: int, move: Dict):
-        """Make a move in the game."""
-        self.last_move = move
-        self.current_player_idx = (self.current_player_idx + 1) % self.num_players
+    # def make_move(self, player_idx: int, move: Dict):
+    #     """Make a move in the game."""
+    #     self.last_move = move
+    #     self.current_player_idx = (self.current_player_idx + 1) % self.num_players
         
-        # Track metrics
-        agent_name = self.agents[player_idx].name
-        self._rounds += 1
+    #     # Track metrics
+    #     agent_name = self.agents[player_idx].name
+    #     self._rounds += 1
         
 
 
@@ -190,9 +190,7 @@ class Environment:
             # Adjust current player index if needed
             if loser_idx <= self.current_player_idx:
                 self.current_player_idx = max(0, self.current_player_idx - 1)
-        
-        self.last_move = None  # Reset last move for new round
-        
+                
         # Reroll dice for all players
         for i in range(len(self.players)):
             self.players[i]['dice'] = [random.randint(1, 6) for _ in range(5)]
@@ -239,7 +237,6 @@ class Environment:
         if self.verbose >= 1:
             print(f"\nTotal {self.last_move['face_value']}s in play: {total_count}")
             print(f"Last bid: {self.last_move['quantity']} {self.last_move['face_value']}s")
-
             print("-" * 50)
             
         # If the actual count is less than the bid, the bluff call was successful
@@ -248,19 +245,18 @@ class Environment:
         # Mark the move as a bluff or not for learning
         self.last_move['was_bluff'] = bluff_call_successful
         
-        # Track metrics for the bluffing player
-        prev_player = self.agents[self._get_previous_player()]
-        if bluff_call_successful:
-            self._successful_bluffs[prev_player.name] += 1
-        else:
-            self._failed_bluffs[prev_player.name] += 1
-            
+        # Notify agents of the updated game state
+        for agent in self.agents:
+            if hasattr(agent, 'update_from_game_state'):
+                agent.update_from_game_state(self.get_game_state())
+        
         # Calculate bluff rate for metrics
-        total_moves = (self._successful_bluffs[prev_player.name] + 
-                      self._failed_bluffs[prev_player.name])
+        prev_player = self.agents[self._get_previous_player()].name
+        total_moves = (self._successful_bluffs[prev_player] + 
+                      self._failed_bluffs[prev_player])
         if total_moves > 0:
-            bluff_rate = self._successful_bluffs[prev_player.name] / total_moves
-            self._actual_bluff_rate[prev_player.name].append(bluff_rate)
+            bluff_rate = self._successful_bluffs[prev_player] / total_moves
+            self._actual_bluff_rate[prev_player].append(bluff_rate)
         
         # Determine which player loses a life
         if bluff_call_successful:
@@ -287,13 +283,9 @@ class Environment:
         if self.players[loser_idx]['lives'] <= 0:
             self.eliminate_player(loser_idx, winner_idx)
             
-        # Reset last move
-        self.last_move = None
-        
+
         # Move to next player (skipping eliminated players)
         if len(self.agents) > 1:  # Only update if game isn't over
-
-            
             # Reroll dice for next round
             for player in self.players:
                 player['dice'] = [random.randint(1, 6) for _ in range(5)]  # Always 5 dice
@@ -304,87 +296,33 @@ class Environment:
             
         return bluff_call_successful
 
-    def play_game(self):
-        """Play a single game of Liar's Dice."""
-        if self.verbose >= 2:
-            print("\n" + "="*50)
-            print(f"🎲 GAME {self.game_number + 1} 🎲".center(50))
-            print("="*50 + "\n")
-        
-        while not self.is_game_over():
-            if self.verbose >= 2:
-                self._print_game_state()
-                
-            # Get current agent's move
-            agent = self.agents[self.current_player_idx]
-            move = agent.make_move(self)
-            
-            # If this is a bluff call, handle it
-            if move.get('bluff', False):
-                if self.verbose >= 2:
-                    self._print_move_outcome(move)
-                success = self._handle_bluff_call()
-                self._update_metrics(agent.name, move, success)
-            else:
-                # Update game state with new move
-                move['was_bluff'] = None  # Mark as unknown until proven
-                self.last_move = move
-                self._update_metrics(agent.name, move, True)  # Move was accepted
-                # Print move outcome if verbose
-                if self.verbose >= 2:
-                    self._print_move_outcome(move)
-
-                self.current_player_idx = self._get_next_player()
-                
-
-            
-            if self.verbose >= 2:
-                sleep(self.sleep_time)
-        
-        # Find the winner (player with lives remaining)
-        winner = next(agent.name for i, agent in enumerate(self.agents) 
-                     if self.players[i]['lives'] > 0)
-        if self.verbose >= 1:
-            print(f"\n🏆 {winner.split('_')[0]} agent {winner} wins! 🏆")
-            
-        if self.verbose >= 2:
-            print("\n" + "="*50)
-            print(f"🎲 GAME {self.game_number + 1} OVER 🎲".center(50))
-            print("="*50 + "\n")
-        if self.verbose >= 2:
-            sleep(self.sleep_time)
-        return winner
-
-    def is_game_over(self) -> bool:
-        """Check if the game is over."""
-        active_players = sum(1 for p in self.players if p['lives'] > 0)
-        if active_players == 1:
-            # Find the winner and add to elimination order if not already there
-            winner = next(agent.name for i, agent in enumerate(self.agents) 
-                        if self.players[i]['lives'] > 0)
-            if winner not in self._elimination_order:
-                self._elimination_order.append(winner)
-        return active_players <= 1
-
     def _update_metrics(self, agent_name: str, move: Dict, was_successful: bool):
         """Update metrics after a move."""
-        # Track bid quantities for non-bluff moves
-        if not move.get('bluff', False):
+        # Track bid quantities for all valid moves with a quantity
+        if 'quantity' in move:
             self._bid_quantities[agent_name].append(move['quantity'])
         
         # Track bluff calls and outcomes
         if move.get('bluff', False):
             self._bluff_calls[agent_name] += 1
+            prev_bid = self.last_move['quantity'] if self.last_move else None
+
             if was_successful:
+                # Current player successfully caught a bluff
                 self._successful_catches[agent_name] += 1
-                self._dice_remaining_successful_bluff[agent_name].append(
-                    sum(len(p['dice']) for p in self.players)
-                )
+                if prev_bid is not None:
+                    self._prev_bid_quantity_successful_bluff[agent_name].append(prev_bid)
+                # Previous player's bluff was caught
+                prev_player = self.agents[self._get_previous_player()].name
+                self._successful_bluffs[prev_player] += 1
             else:
+                # Current player failed to catch a bluff
                 self._failed_catches[agent_name] += 1
-                self._dice_remaining_failed_bluff[agent_name].append(
-                    sum(len(p['dice']) for p in self.players)
-                )
+                if prev_bid is not None:
+                    self._prev_bid_quantity_failed_bluff[agent_name].append(prev_bid)
+                # Previous player successfully bluffed
+                prev_player = self.agents[self._get_previous_player()].name
+                self._failed_bluffs[prev_player] += 1
         
         # Track prediction metrics
         if 'predicted_probability' in move:
@@ -394,6 +332,8 @@ class Environment:
         # Track adaptive learning metrics
         if 'predicted_bluff_rate' in move:
             self._predicted_bluff_rate[agent_name].append(move['predicted_bluff_rate'])
+            if 'actual_bluff_rate' in move:
+                self._actual_bluff_rate[agent_name].append(move['actual_bluff_rate'])
         
         # Track bluff threshold
         if 'bluff_threshold' in move:
@@ -453,8 +393,8 @@ class Environment:
             elimination_order=self._elimination_order,
             
             # New metrics
-            dice_remaining_successful_bluff=dict(self._dice_remaining_successful_bluff),
-            dice_remaining_failed_bluff=dict(self._dice_remaining_failed_bluff),
+            prev_bid_quantity_successful_bluff=dict(self._prev_bid_quantity_successful_bluff),
+            prev_bid_quantity_failed_bluff=dict(self._prev_bid_quantity_failed_bluff),
             predicted_probability=dict(self._predicted_probability),
             actual_outcome=dict(self._actual_outcome),
             bluff_threshold=dict(self._bluff_threshold),
@@ -552,8 +492,8 @@ class Environment:
         self._rounds = 0
         
         # Reset new metrics
-        self._dice_remaining_successful_bluff = defaultdict(list)
-        self._dice_remaining_failed_bluff = defaultdict(list)
+        self._prev_bid_quantity_successful_bluff = defaultdict(list)
+        self._prev_bid_quantity_failed_bluff = defaultdict(list)
         self._predicted_probability = defaultdict(list)
         self._actual_outcome = defaultdict(list)
         self._bluff_threshold = defaultdict(list)
@@ -561,3 +501,75 @@ class Environment:
         self._actual_bluff_rate = defaultdict(list)
         self._decision_type = defaultdict(list)
         self._successful_move = defaultdict(list)
+
+    def play_game(self):
+        """Play a single game of Liar's Dice."""
+        if self.verbose >= 2:
+            print("\n" + "="*50)
+            print(f"🎲 GAME {self.game_number + 1} 🎲".center(50))
+            print("="*50 + "\n")
+        
+        while not self.is_game_over():
+            if self.verbose >= 2:
+                self._print_game_state()
+            
+            # Get current agent's move
+            agent = self.agents[self.current_player_idx]
+            move = agent.make_move(self)
+
+            # If this is a bluff call, handle it
+            if move.get('bluff', False):
+                if self.verbose >= 2:
+                    self._print_move_outcome(move)
+                    
+                # Preserve the adjust_threshold flag in last_move for agent learning
+                if self.last_move:
+                    self.last_move['adjust_threshold'] = move.get('adjust_threshold', False)
+                
+                success = self._handle_bluff_call()
+                self._update_metrics(agent.name, move, success)
+                self.last_move = None
+            else:
+                # Update game state with new move
+                if self.last_move:
+                    # Previous move wasn't a bluff since no one called it
+                    self.last_move['was_bluff'] = False
+                
+                move['was_bluff'] = None  # Will be determined by next player's action
+                self.last_move = move
+                self._update_metrics(agent.name, move, True)  # Move was accepted
+                # Print move outcome if verbose
+                if self.verbose >= 2:
+                    self._print_move_outcome(move)
+
+                self.current_player_idx = self._get_next_player()
+                
+
+            
+            if self.verbose >= 2:
+                sleep(self.sleep_time)
+        
+        # Find the winner (player with lives remaining)
+        winner = next(agent.name for i, agent in enumerate(self.agents) 
+                     if self.players[i]['lives'] > 0)
+        if self.verbose >= 1:
+            print(f"\n🏆 {winner.split('_')[0]} agent {winner} wins! 🏆")
+            
+        if self.verbose >= 2:
+            print("\n" + "="*50)
+            print(f"🎲 GAME {self.game_number + 1} OVER 🎲".center(50))
+            print("="*50 + "\n")
+        if self.verbose >= 2:
+            sleep(self.sleep_time)
+        return winner
+
+    def is_game_over(self) -> bool:
+        """Check if the game is over."""
+        active_players = sum(1 for p in self.players if p['lives'] > 0)
+        if active_players == 1:
+            # Find the winner and add to elimination order if not already there
+            winner = next(agent.name for i, agent in enumerate(self.agents) 
+                        if self.players[i]['lives'] > 0)
+            if winner not in self._elimination_order:
+                self._elimination_order.append(winner)
+        return active_players <= 1

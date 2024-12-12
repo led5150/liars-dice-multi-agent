@@ -85,7 +85,7 @@ Test Suite 3: Adaptive Intelligence
 --------------------------------
 
 TestName: Adaptive_vs_Informed_1v3
-Description: One adaptive agent versus three informed agents
+Description: One adaptive agent versus three informed agents. 
 Purpose: Test if adaptive learning can outperform pure probability-based decisions
 Probability Notes:
     - Baseline probability calculations same as informed agents
@@ -217,7 +217,7 @@ Test Suite 6: Long-Term Learning
 ------------------------------
 
 TestName: Adaptive_Learning_Marathon
-Description: Extended game series with adaptive agents to test learning depth
+Description: Extended game series with adaptive agents to test learning depth. Play against LLM agents to simulate human-like behavior. See if adaptive learning can outperform "humans"
 Purpose: Analyze how well adaptive agents improve over many iterations
 Probability Notes:
     - Learning model analysis:
@@ -246,7 +246,7 @@ Probability Notes:
             z = (μᵢ - μᵢ₋₁)/(√(σᵢ² + σᵢ₋₁²)/500)
         * H₀: No improvement between phases
         * Required: z > 2.576 for p < 0.01
-Command: python simulate_game.py --mode sim --rounds 2000 --adaptive-agents 2 --informed-agents 2 --plt-suffix adaptive_learning_marathon
+Command: python simulate_game.py --mode sim --rounds 2000 --adaptive-agents 1 --llm-agents 3 --plt-suffix adaptive_learning_marathon
 
 Note: For all tests:
 - Use --verbose 0 to minimize output and speed up simulation

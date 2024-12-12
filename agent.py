@@ -30,6 +30,7 @@ class LiarsDiceAgent(ABC):
         self.dice: List[int] = []
         self.color = AGENT_COLORS[color_idx % len(AGENT_COLORS)]
         self.verbose = verbose
+        self.agent_type = self.__class__.__name__.replace('Agent', '')  # Extract agent type from class name
         
     @abstractmethod
     def make_move(self, environment) -> Dict:
@@ -42,6 +43,10 @@ class LiarsDiceAgent(ABC):
     def set_dice(self, dice: List[int]):
         """Set the agent's current dice"""
         self.dice = sorted(dice)
+
+    def update_from_game_state(self, game_state: Dict):
+        """Update agent's strategy based on the game state"""
+        pass
 
 class LiarsMove(BaseModel):
     """Pydantic model for structured output from OpenAI"""
@@ -100,7 +105,7 @@ class InformedAgent(LiarsDiceAgent):
             
             if required_successes <= 0:
                 # We can verify the bid is true
-                P_bluff = 0.0
+                P_truthful = 1.0
             else:
                 # Calculate probability that at least required_successes dice show face_value
                 P_truthful = self.calc_probability(
@@ -109,7 +114,7 @@ class InformedAgent(LiarsDiceAgent):
                     c=required_successes,
                     k=0
                 )
-                P_bluff = 1 - P_truthful
+            P_bluff = 1 - P_truthful
         
         # Store the probability for metrics
         self.last_probability = P_bluff
@@ -176,14 +181,14 @@ class InformedAgent(LiarsDiceAgent):
 class AdaptiveAgent(LiarsDiceAgent):
     """Agent that adapts its strategy based on game state and player behavior patterns"""
     
-    def __init__(self, name: str, color_idx: int = 0):
+    def __init__(self, name: str, color_idx: int = 0, learning_rate: float = 0.05, aggressive_factor: float = 1.0):
         super().__init__(name, color_idx)
         from liars_dice_calculator import liars_dice_calc
         self.calc_probability = liars_dice_calc
         self.player_history = {}  # {player_idx: [moves]}
-        self.bluff_threshold = 0.4  # Adjustable threshold for calling bluffs
-        self.aggressive_factor = 1.2  # How aggressive to be with bids
-        self.learning_rate = 0.1  # How quickly to adjust to player patterns
+        self.bluff_threshold = 0.4  # Start more aggressive at calling bluffs
+        self.aggressive_factor = aggressive_factor
+        self.learning_rate = learning_rate  # How quickly to adjust to player patterns
         self.predicted_bluff_rate = None  # Track predicted bluff rate
     
     def _analyze_player_patterns(self, player_idx: int) -> Dict:
@@ -251,6 +256,36 @@ class AdaptiveAgent(LiarsDiceAgent):
         # Keep aggression in reasonable range
         self.aggressive_factor = max(0.8, min(1.5, self.aggressive_factor))
     
+    def _handle_bluff_call(self, was_bluff, last_move):
+        """Handle the outcome of a bluff call and adjust strategy accordingly"""
+        # If this was our bluff call, adjust threshold based on outcome
+        if last_move.get('adjust_threshold'): # NOTE this key is only present when the bluff was called
+            # Use learning rate for adjustment amount
+            adjustment = self.learning_rate
+            
+            # If we correctly called a bluff, decrease threshold (be more aggressive)
+            # If we were wrong, increase threshold (be more conservative)
+            if was_bluff:
+                self.bluff_threshold *= (1 - adjustment)
+            else:
+                self.bluff_threshold *= (1 + adjustment)
+
+            # Make sure the threshold is within a reasonable range
+            self.bluff_threshold = max(0.1, min(0.9, self.bluff_threshold))
+            
+            # Log the adjustment for debugging
+            # print(f"Adjusted bluff threshold to {self.bluff_threshold:.2f} after {'correct' if was_bluff else 'incorrect'} bluff call")
+    
+    def update_from_game_state(self, game_state: Dict):
+        """Update agent's strategy based on the game state"""
+        super().update_from_game_state(game_state)
+        
+        # Check if there was a bluff call and handle it
+        last_move = game_state.get('last_move', {})
+
+        if last_move and 'was_bluff' in last_move:
+            self._handle_bluff_call(last_move['was_bluff'], last_move)
+    
     def make_move(self, environment) -> Dict:
         game_state = environment.get_game_state()
         last_move = game_state.get('last_move')
@@ -264,18 +299,6 @@ class AdaptiveAgent(LiarsDiceAgent):
             
             # Always update history with the move
             self.player_history[player_idx].append(last_move)
-            
-            # Adjust bluff threshold if we know the outcome
-            if 'was_bluff' in last_move:
-                if last_move['was_bluff']:
-                    # If it was a bluff, lower threshold to catch more
-                    self.bluff_threshold *= (1 - self.learning_rate)
-                else:
-                    # If it wasn't a bluff, raise threshold to be more cautious
-                    self.bluff_threshold *= (1 + self.learning_rate)
-                
-                # Keep threshold in reasonable range
-                self.bluff_threshold = max(0.2, min(0.8, self.bluff_threshold))
         
         self._adjust_confidence(game_state)
         
@@ -314,43 +337,57 @@ class AdaptiveAgent(LiarsDiceAgent):
             
             # If probability of bluff is high enough, call it
             if P_bluff > self.bluff_threshold:
-                return {
-                    'bluff': True,
-                    'predicted_bluff_rate': P_bluff,
-                    'actual_bluff_rate': patterns['bluff_rate'],
-                    'bluff_threshold': self.bluff_threshold
-                }
+                move_scores = [{
+                    'move': {
+                        'bluff': True,
+                        'predicted_bluff_rate': P_bluff,
+                        'actual_bluff_rate': patterns['bluff_rate'],
+                        'bluff_threshold': self.bluff_threshold,
+                        'adjust_threshold': True  # Flag to indicate we should adjust threshold based on outcome
+                    },
+                    'score': P_bluff
+                }]
+                best_move = move_scores[0]
+                
+                # Add reasoning for debugging
+                best_move['move']['reasoning'] = (
+                    f"Called bluff with P(bluff)={P_bluff:.2f}, threshold={self.bluff_threshold:.2f}. "
+                    f"Aggression: {self.aggressive_factor:.2f}"
+                )
+                
+                return best_move['move']
         
         # Evaluate potential moves
+        valid_moves = environment.get_valid_moves()
         move_scores = []
+        
         for move in valid_moves:
             if move.get('bluff', False):
-                # Score for calling bluff
-                score = P_bluff
-            else:
-                # Score for making a bid
-                face_value = move['face_value']
-                quantity = move['quantity']
-                my_relevant_dice = self.dice.count(face_value)
-                required_successes = quantity - my_relevant_dice
+                continue  # Skip bluff moves, we already handled that case
                 
-                if required_successes <= 0:
-                    probability = 1.0
-                else:
-                    probability = self.calc_probability(
-                        D=game_state['total_dice'] - len(self.dice),
-                        p=1/6,
-                        c=required_successes,
-                        k=0
-                    )
-                
-                # Adjust score based on our strategy
-                score = probability * self.aggressive_factor
-                
-                # Prefer moves that align with our dice
-                if my_relevant_dice > 0:
-                    score *= 1.2
+            # Calculate probability of making this bid
+            face_value = move['face_value']
+            quantity = move['quantity']
+            my_relevant_dice = self.dice.count(face_value)
+            required_successes = quantity - my_relevant_dice
             
+            if required_successes <= 0:
+                P_success = 1.0
+            else:
+                P_success = self.calc_probability(
+                    D=environment.get_num_dice_in_play() - len(self.dice),
+                    p=1/6,
+                    c=required_successes,
+                    k=0
+                )
+            
+            # Store metrics for this move
+            move['predicted_bluff_rate'] = 1 - P_success
+            move['actual_bluff_rate'] = patterns['bluff_rate']
+            move['bluff_threshold'] = self.bluff_threshold
+            
+            # Score is weighted by our aggressive factor
+            score = P_success * self.aggressive_factor
             move_scores.append({'move': move, 'score': score})
         
         # Select the best move

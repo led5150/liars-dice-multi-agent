@@ -82,7 +82,7 @@ def run_simulation(num_rounds: int, agents: list, verbose: int = 0, output_dir: 
     
     # Record agent types
     for agent in agents:
-        agent_type = metrics._get_agent_type(agent.__class__.__name__)
+        agent_type = agent.agent_type  # Use agent's own type field
         if verbose >= 1:
             print(f"Recording agent: {agent.name} -> {agent_type}")
         metrics.agent_types[agent.name] = agent_type

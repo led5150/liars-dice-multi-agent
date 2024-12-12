@@ -1,29 +1,26 @@
-AGENTS:
-
-LLM Agent:
--  We need to check if the LLM is making valid moves. Check their move against the list of valid moves (from )
-
-
-
-
 Plot fix plan:
 
-1. Bluff Timing Plot: The concept behind this was relying on the average number of dice remaining when bluffing. 
+#1. Bluff Timing Plot: The concept behind this was relying on the average number of dice remaining when bluffing. 
    However, in this variation of the game, we lose lives, not dice, when bluffing. So we always have 5 dice. 
    We should instead track the number (quantity) of dice called in the previous round that caused this agent to bluff,
    so we can see patterns in bluff timing. And/Or any other relevant metrics you can think of!
 
-2. Bluffing Behavior Plot: If it is easy to do, let's track the number of failed bluff calls per round as well.
+#2. Bluffing Behavior Plot: If it is easy to do, let's track the number of failed bluff calls per round as well.
 
-3. Individual performance metrics: 
+#3. Individual performance metrics: 
    - It seems like we are not properly tracking the failed bluff calls, for the RandomAgent as this
     value is always zero.
     - Let's plot the wins as an average, not a total.
 
-4. win rates plot: This is not properly aggregating the win rates by agent type. For example in the control_4random
+#4. win rates plot: This is not properly aggregating the win rates by agent type. For example in the control_4random
    test, we should see that the win rate is 100% for the RandomAgent, but we see 25%. 
 
-5. LLM Reasononing Plot: This is SO cool, however, the output of the LLM is stochastic, so we need a way
+#5. Adaptive learning Plot: 
+   - Bluff threshhold line is basically flat at 0.8. Not sure if that is correct or not.
+   - Spacing is bad. The Main Title and the learning progression over time titles are overlapping.
+   - The annotated legend for recent prediction accuracy is outside the bounds of the top subplot. smae with the prediction accuracy annotated legend.
+
+#6. LLM Reasononing Plot: This is SO cool, however, the output of the LLM is stochastic, so we need a way
 of grouping together similar reasonings. 
 Ideas:
  -  Creaete embeddings for the reasoning output
