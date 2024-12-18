@@ -374,8 +374,9 @@ class Environment:
         # Calculate survival time (when they were eliminated)
         survival_times = {}
         for idx, agent in enumerate(self._elimination_order):
-            survival_times[agent] = self._rounds - (len(self._elimination_order) - idx - 1)
-        # Winner survived the whole game
+            # Each agent survives at least 1 round, and then add additional rounds based on elimination order
+            survival_times[agent] = max(1, self._rounds - (len(self._elimination_order) - idx - 1))
+        # Winner survived all rounds
         survival_times[winner] = self._rounds
         
         return GameMetrics(

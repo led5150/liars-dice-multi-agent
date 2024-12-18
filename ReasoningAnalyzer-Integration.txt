@@ -1,0 +1,96 @@
+# ReasoningAnalyzer Integration Plan
+
+## Current System Analysis
+1. Current System (metrics.py):
+   - Stores LLM reasoning in GameMetrics.decision_type (Dict[str, List[str]])
+   - Tracks success of each decision (GameMetrics.successful_move)
+   - Creates visualizations in plot_llm_reasoning():
+     * Decision type distribution (pie chart)
+     * Success rate by decision type (bar chart)
+     * Success rate over time (line plot)
+     * Decision type evolution (stacked area plot)
+
+2. New System (reasoning_analysis.py):
+   - Uses advanced NLP for clustering similar reasonings
+   - Generates detailed cluster summaries with:
+     * Category names
+     * Decision types
+     * Reasoning patterns
+     * Key characteristics
+     * Confidence scores
+   - Creates visualizations:
+     * Interactive scatter plot of reasoning clusters
+     * Detailed summary table with cluster characteristics
+
+## Integration Plan
+
+### Phase 1: Data Access & Processing
+1. Modify plot_llm_reasoning():
+   - Extract all reasonings from df_exploded['decision_type']
+   - Create ReasoningAnalyzer instance
+   - Process reasonings through our clustering pipeline
+   - Store cluster assignments back in DataFrame
+
+2. Add Success Rate Analysis:
+   - Map success rates to clusters
+   - Calculate cluster-level statistics:
+     * Average success rate
+     * Success rate over time
+     * Success rate by game phase
+
+### Phase 2: Enhanced Visualizations
+1. Modify ReasoningAnalyzer Visualizations:
+   - Add success rate to scatter plot:
+     * Color points by success rate
+     * Size points by usage frequency
+   - Add success metrics to summary table:
+     * Success rate column
+     * Usage frequency column
+     * Temporal distribution
+
+2. Create Combined Visualizations:
+   - Keep existing plot_llm_reasoning() charts but use cluster data:
+     * Replace raw decision types with cluster categories
+     * Add cluster confidence scores
+     * Show success rate by cluster
+
+3. New Visualization Methods:
+   - Cluster Evolution Plot:
+     * Show how clusters are used over time
+     * Track success rates of clusters
+   - Strategic Adaptation Plot:
+     * Show how agents switch between clusters
+     * Highlight successful strategy shifts
+
+### Phase 3: Testing & Validation
+1. Create Integration Tests:
+   - Test data flow from metrics to analysis
+   - Validate cluster assignments
+   - Check visualization accuracy
+
+2. Performance Testing:
+   - Measure impact on analysis time
+   - Optimize clustering for larger datasets
+   - Cache cluster results
+
+### Implementation Steps
+1. Start with Phase 1:
+   - Modify plot_llm_reasoning
+   - Add success rate analysis
+   - Test data processing pipeline
+
+2. Implement Phase 2:
+   - Update existing visualizations
+   - Create new visualizations
+   - Add configuration options
+
+3. Complete with Phase 3:
+   - Write integration tests
+   - Optimize performance
+   - Document new features
+
+## Notes
+- We can use existing decision_type data directly
+- Keep existing metrics for backward compatibility
+- Make visualization types configurable
+- Consider caching cluster results for repeated analysis

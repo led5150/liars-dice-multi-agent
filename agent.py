@@ -470,7 +470,7 @@ class LLMAgent(LiarsDiceAgent):
                 game_state = environment.get_game_state()
                 valid_moves = game_state.get('valid_moves', [])
                 while move_json not in valid_moves:
-                    print(f"LLM Produced an Invalid move!! {move_json} retrying...")
+                    # print(f"LLM Produced an Invalid move!! {move_json} retrying...")
                     invalid_prompt = INVALID_RESPONSE_PROMPT.format(
                         dice=self.dice,
                         total_dice=game_state['total_dice'],
@@ -487,7 +487,7 @@ class LLMAgent(LiarsDiceAgent):
                     )
                     move = completion.choices[0].message.parsed 
                     move_json = {'quantity': move.quantity, 'face_value': move.face_value, 'bluff': move.bluff}
-                print("LLM Produced a Valid move!!")
+                # print("LLM Produced a Valid move!!")
                 # Update last reasonin
                 self.last_reasoning = {
                     "decision_type": move.reasoning,

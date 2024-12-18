@@ -16,65 +16,65 @@ class TestRunner:
     def _define_tests(self) -> List[Dict]:
         """Define all test configurations."""
         return [
-            {
-                "name": "Control_4Random",
-                "description": "Control test with 4 random agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--random-agents", "4",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "control_4random"]
-            },
-            {
-                "name": "Control_4Informed",
-                "description": "Control test with 4 informed agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--informed-agents", "4",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "control_4informed"]
-            },
-            {
-                "name": "Informed_vs_Random_1v3",
-                "description": "One informed agent versus three random agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--informed-agents", "1",
-                           "--random-agents", "3",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "informed_v_random_1v3"]
-            },
-            {
-                "name": "Informed_vs_Random_2v2",
-                "description": "Two informed agents versus two random agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--informed-agents", "2",
-                           "--random-agents", "2",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "informed_v_random_2v2"]
-            },
-            {
-                "name": "Adaptive_vs_Informed_1v3",
-                "description": "One adaptive agent versus three informed agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--adaptive-agents", "1",
-                           "--informed-agents", "3",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "adaptive_v_informed_1v3"]
-            },
-            {
-                "name": "Adaptive_vs_Random_1v3",
-                "description": "One adaptive agent versus three random agents",
-                "command": ["python", "simulate_game.py", "--mode", "sim",
-                           "--adaptive-agents", "1",
-                           "--random-agents", "3",
-                           "--rounds", str(self.test_rounds),
-                           "--plt-suffix", "adaptive_v_random_1v3"]
-            },
+            # {
+            #     "name": "Control_4Random",
+            #     "description": "Control test with 4 random agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--random-agents", "4",
+            #                "--rounds", str(self.test_rounds),
+            #                "--plt-suffix", "control_4random"]
+            # },
+            # {
+            #     "name": "Control_4Informed",
+            #     "description": "Control test with 4 informed agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--informed-agents", "4",
+            #                "--rounds", str(self.test_rounds),
+            #                "--plt-suffix", "control_4informed"]
+            # },
+            # {
+            #     "name": "Informed_vs_Random_1v3",
+            #     "description": "One informed agent versus three random agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--informed-agents", "1",
+            #                "--random-agents", "3",
+            #                "--rounds", str(self.test_rounds),
+            #                "--plt-suffix", "informed_v_random_1v3"]
+            # },
+            # {
+            #     "name": "Informed_vs_Random_2v2",
+            #     "description": "Two informed agents versus two random agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--informed-agents", "2",
+            #                "--random-agents", "2",
+            #                "--rounds", str(self.test_rounds),
+            #                "--plt-suffix", "informed_v_random_2v2"]
+            # },
+            # {
+            #     "name": "Adaptive_vs_Informed_1v3",
+            #     "description": "One adaptive agent versus three informed agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--adaptive-agents", "1",
+            #                "--informed-agents", "3",
+            #                "--rounds", str(self.test_rounds * 2),
+            #                "--plt-suffix", "adaptive_v_informed_1v3"]
+            # },
+            # {
+            #     "name": "Adaptive_vs_Random_1v3",
+            #     "description": "One adaptive agent versus three random agents",
+            #     "command": ["python", "simulate_game.py", "--mode", "sim",
+            #                "--adaptive-agents", "1",
+            #                "--random-agents", "3",
+            #                "--rounds", str(self.test_rounds * 2),
+            #                "--plt-suffix", "adaptive_v_random_1v3"]
+            # },
             {
                 "name": "LLM_vs_Random_1v3",
                 "description": "One LLM agent versus three random agents",
                 "command": ["python", "simulate_game.py", "--mode", "sim",
                            "--llm-agents", "1",
                            "--random-agents", "3",
-                           "--rounds", str(self.test_rounds),
+                           "--rounds", "100",
                            "--plt-suffix", "llm_v_random_1v3"]
             },
             {
@@ -83,8 +83,17 @@ class TestRunner:
                 "command": ["python", "simulate_game.py", "--mode", "sim",
                            "--llm-agents", "1",
                            "--informed-agents", "3",
-                           "--rounds", str(self.test_rounds),
+                           "--rounds", "100",
                            "--plt-suffix", "llm_v_informed_1v3"]
+            },
+            {
+                "name": "LLM_vs_Adaptive_1v3",
+                "description": "One LLM agent versus three adaptive agents",
+                "command": ["python", "simulate_game.py", "--mode", "sim",
+                           "--llm-agents", "1",
+                           "--adaptive-agents", "3",
+                           "--rounds", "100",
+                           "--plt-suffix", "llm_v_adaptive_1v3"]
             },
             {
                 "name": "Mixed_OneEach",
@@ -94,7 +103,7 @@ class TestRunner:
                            "--informed-agents", "1",
                            "--adaptive-agents", "1",
                            "--llm-agents", "1",
-                           "--rounds", str(self.test_rounds),
+                           "--rounds", "100",
                            "--plt-suffix", "mixed_one_each"]
             },
             {
@@ -105,7 +114,7 @@ class TestRunner:
                            "--informed-agents", "2",
                            "--adaptive-agents", "2",
                            "--llm-agents", "2",
-                           "--rounds", str(self.test_rounds),
+                           "--rounds", "100",
                            "--plt-suffix", "mixed_two_each"]
             },
             {
@@ -114,7 +123,7 @@ class TestRunner:
                 "command": ["python", "simulate_game.py", "--mode", "sim",
                            "--adaptive-agents", "1",
                            "--llm-agents", "3",
-                           "--rounds", str(self.test_rounds),
+                           "--rounds", "100",
                            "--plt-suffix", "adaptive_learning_marathon"]
             }
         ]
@@ -212,6 +221,6 @@ class TestRunner:
         print("=" * 50)
 
 if __name__ == "__main__":
-    # For initial testing, use 10 rounds
-    runner = TestRunner(test_rounds=2)
+    # For initial testing, use 10 rounds, full test uses 1000 rounds as default.
+    runner = TestRunner(test_rounds=1000)
     runner.run_all_tests()

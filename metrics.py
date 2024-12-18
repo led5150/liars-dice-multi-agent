@@ -9,6 +9,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorsys
+from reasoning_analysis import ReasoningAnalyzer
+import plotly.io as pio
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 @dataclass
 class GameMetrics:
@@ -244,18 +248,24 @@ class SimulationMetrics:
         
         # Plot bars
         metrics = ['bluff_rate', 'successful_bluffs', 'failed_bluffs', 'successful_catches', 'failed_catches']
-        labels = ['Call Bluff Rate', 'Successful Bluffs/Game', 'Failed Bluffs/Game', 'Successful Catches/Game', 'Failed Catches/Game']
+        labels = ['Call Bluff Rate (%)', 'Successful Bluffs/Game', 'Failed Bluffs/Game', 'Successful Catches/Game', 'Failed Catches/Game']
         
         for i, (metric, label) in enumerate(zip(metrics, labels)):
             offset = (i - 1.5) * bar_width
+            # Use raw values for plotting (keep bluff_rate as decimal)
             bars = ax.bar(x + offset, metrics_df[metric], bar_width,
                          label=label, color=plt.cm.Set2(i/4))
             
             # Add value labels on bars
             for j, bar in enumerate(bars):
                 height = bar.get_height()
+                # Format as percentage for bluff rate, regular number for others
+                if metric == 'bluff_rate':
+                    value_text = f'{height * 100:.1f}%'  # Convert to percentage only for display
+                else:
+                    value_text = f'{height:.1f}'
                 ax.text(bar.get_x() + bar_width/2, height + 0.01,
-                       f'{height:.1f}', ha='center', va='bottom',
+                       value_text, ha='center', va='bottom',
                        fontsize=8, fontweight='bold')
         
         # Customize plot
@@ -308,9 +318,13 @@ class SimulationMetrics:
         plt.ylabel('Average Bid Quantity')
         plt.grid(True, alpha=0.3)
         
-        # Add value labels on bars
+        # Add value labels on bars with offset to avoid error bars
         for i, v in enumerate(bid_means):
-            plt.text(i, v + 0.1, f'{v:.2f}', ha='center')
+            # Calculate total height including error bar
+            total_height = v + bid_stds[i]
+            # Add label with small horizontal offset to avoid error bar
+            plt.text(i + 0.1, total_height + 0.05, f'{v:.2f}', 
+                    ha='center', va='bottom')
         
         # Only add legend if we have bars
         if len(bars) > 0:
@@ -429,8 +443,9 @@ class SimulationMetrics:
         colors = [color_map[agent_type] for agent_type in agent_types]
         
         # Calculate per-agent metrics
+        total_games = len(self.games)  # Get total number of games
         metrics_df = df.groupby('agent_name').agg({
-            'won': 'sum',  # Total wins
+            'won': lambda x: sum(x) / total_games,  # Keep as decimal for plotting
             'successful_bluffs': 'mean',  # Average successful bluffs per game
             'failed_bluffs': 'mean',  # Average failed bluffs per game
             'successful_catches': 'mean'  # Average successful catches per game
@@ -444,7 +459,7 @@ class SimulationMetrics:
         
         # Plot each metric
         metrics = ['won', 'successful_bluffs', 'failed_bluffs', 'successful_catches']
-        labels = ['Total Wins', 'Successful Bluffs/Game', 'Failed Bluffs/Game', 'Successful Catches/Game']
+        labels = ['Win Rate (%)', 'Successful Bluffs/Game', 'Failed Bluffs/Game', 'Successful Catches/Game']
         
         for i, (metric, label) in enumerate(zip(metrics, labels)):
             offset = (i - 1.5) * bar_width
@@ -454,8 +469,13 @@ class SimulationMetrics:
             # Add value labels on bars
             for j, bar in enumerate(bars):
                 height = bar.get_height()
+                # Add % symbol and convert to percentage for win rate
+                if metric == 'won':
+                    value_text = f'{height * 100:.1f}%'
+                else:
+                    value_text = f'{height:.1f}'
                 ax.text(bar.get_x() + bar_width/2, height + 0.01,
-                       f'{height:.1f}', ha='center', va='bottom',
+                       value_text, ha='center', va='bottom',
                        fontsize=8, fontweight='bold')
         
         # Customize the plot
@@ -649,10 +669,10 @@ class SimulationMetrics:
             success_val = success_means.get(agent, 0)
             failed_val = failed_means.get(agent, 0)
             if success_val > 0:
-                plt.text(i - width/2, success_val + 0.2, f'{success_val:.1f}', 
+                plt.text(i - width/2 + 0.1, success_val + 0.2, f'{success_val:.1f}', 
                         ha='center', va='bottom')
             if failed_val > 0:
-                plt.text(i + width/2, failed_val + 0.2, f'{failed_val:.1f}', 
+                plt.text(i + width/2 + 0.1, failed_val + 0.2, f'{failed_val:.1f}', 
                         ha='center', va='bottom')
         
         # Add grid for better readability
@@ -842,8 +862,8 @@ class SimulationMetrics:
         df_exploded = df_exploded.sort_values(['game_id', 'move_number'])
         df_exploded['global_move_number'] = range(1, len(df_exploded) + 1)
         
-        # Create bins of 20 moves
-        bin_size = 20
+        # Create bins of 50 moves
+        bin_size = 50  # Increased from 20 to 50 for smoother visualization
         df_exploded['move_bin'] = df_exploded['global_move_number'].apply(lambda x: ((x-1) // bin_size) * bin_size + bin_size/2)
         
         # Calculate statistics for each bin
@@ -878,18 +898,18 @@ class SimulationMetrics:
                            binned_stats[col_mean] + binned_stats[col_std],
                            alpha=0.1, color=color)
         
-        # Add light scatter points for raw values
+        # Add light scatter points for raw values with lighter gray color
         ax1.scatter(df_exploded['global_move_number'], df_exploded['predicted_bluff_rate'],
-                   alpha=0.1, color='blue', s=5)
+                   alpha=0.05, color='lightgray', s=2)  # Reduced alpha and size, lighter color
         ax1.scatter(df_exploded['global_move_number'], df_exploded['actual_bluff_rate'],
-                   alpha=0.1, color='orange', s=5)
+                   alpha=0.05, color='lightgray', s=2)
         ax1.scatter(df_exploded['global_move_number'], df_exploded['bluff_threshold'],
-                   alpha=0.1, color='green', s=5)
+                   alpha=0.05, color='lightgray', s=2)
         
-        # Add vertical lines at game boundaries
+        # Add vertical lines at game boundaries with lighter color
         game_boundaries = df_exploded.groupby('game_id')['global_move_number'].last()
         for game_end in game_boundaries:
-            ax1.axvline(x=game_end, color='gray', linestyle='--', alpha=0.2)
+            ax1.axvline(x=game_end, color='lightgray', linestyle='--', alpha=0.1)  # Lighter color and reduced alpha
         
         ax1.set_title('Learning Progression Over Time')
         ax1.set_xlabel('Move Number (Across All Games)')
@@ -959,7 +979,10 @@ class SimulationMetrics:
         plt.close()
 
     def plot_llm_reasoning(self, output_dir: str, plt_suffix: str):
-        """Analyze and plot LLM agent's reasoning patterns."""
+        """Analyze and plot LLM agent's reasoning patterns using clustering analysis."""
+        from reasoning_analysis import ReasoningAnalyzer
+        import plotly.io as pio
+        
         df = self.to_dataframe()
         
         if df.empty:
@@ -967,99 +990,274 @@ class SimulationMetrics:
                 print("Warning: No data available for LLM reasoning plot")
             return
         
-        # Filter for LLM agents (note: agent type is stored without 'Agent' suffix)
+        # Filter for LLM agents and explode decision data
         df_exploded = df[df['agent_type'] == 'LLM'].explode(['decision_type', 'successful_move'])
         
         if df_exploded.empty:
             if self.verbose >= 1:
                 print("Warning: No valid LLM reasoning data")
             return
-        
+            
         # Convert boolean successful_move to numeric
         df_exploded['successful_move'] = df_exploded['successful_move'].map({True: 1, False: 0})
         
-        # Create figure with three subplots
-        fig = plt.figure(figsize=(15, 15))
-        gs = plt.GridSpec(3, 2, figure=fig)
-        ax1 = fig.add_subplot(gs[0, :])  # Decision type distribution
-        ax2 = fig.add_subplot(gs[1, :])  # Success rate by decision type
-        ax3 = fig.add_subplot(gs[2, 0])  # Success rate over time
-        ax4 = fig.add_subplot(gs[2, 1])  # Decision type evolution
+        # Initialize ReasoningAnalyzer with config
+        config = {
+            'embedding_model': 'all-MiniLM-L6-v2',
+            'clustering': {
+                'min_cluster_size': 5,
+                'min_samples': 3
+            },
+            'visualization': {
+                'output_formats': ['html', 'png'],
+                'interactive': True
+            }
+        }
+        analyzer = ReasoningAnalyzer(config)
         
-        fig.suptitle('LLM Agent Decision Analysis', fontsize=14, fontweight='bold', y=0.95)
+        # Generate embeddings and cluster the decision types
+        decision_types = df_exploded['decision_type'].tolist()
+        embeddings = analyzer.generate_embeddings(decision_types)
+        similarities = analyzer.calculate_similarity(embeddings)
+        clusters = analyzer.cluster_reasonings(similarities)
+        cluster_labels = clusters['labels']
         
-        # 1. Decision Type Distribution (Pie Chart)
-        decision_counts = df_exploded['decision_type'].value_counts()
-        total_decisions = len(df_exploded)
-        sizes = [count/total_decisions * 100 for count in decision_counts]
-        ax1.pie(sizes, labels=decision_counts.index,
-                autopct='%1.1f%%', startangle=90)
-        ax1.set_title('Distribution of Decision Types')
+        # Get cluster summaries
+        summaries = analyzer.summarize_clusters(clusters, decision_types)
         
-        # 2. Success Rate by Decision Type (Bar Chart)
-        success_rates = df_exploded.groupby('decision_type')['successful_move'].agg(['mean', 'count', 'std'])
-        success_rates = success_rates.sort_values('mean', ascending=False)
+        # Create cluster labels with categories
+        cluster_labels_with_category = {}
+        cluster_labels_simple = {}
+        cluster_labels_detailed = {}
         
-        bars = ax2.bar(range(len(success_rates)), success_rates['mean'])
+        for cluster_id in set(cluster_labels):
+            if cluster_id == -1:
+                label = "Mixed Strategy"
+                cluster_labels_with_category[cluster_id] = label
+                cluster_labels_simple[cluster_id] = "Mixed"
+                cluster_labels_detailed[cluster_id] = label
+            else:
+                summary = summaries.get(cluster_id)
+                simple_label = f"Cluster {cluster_id}"
+                cluster_labels_simple[cluster_id] = simple_label
+                if summary:
+                    detailed_label = f"{simple_label}: {summary.category_name}"
+                    cluster_labels_with_category[cluster_id] = detailed_label
+                    cluster_labels_detailed[cluster_id] = detailed_label
+                else:
+                    cluster_labels_with_category[cluster_id] = simple_label
+                    cluster_labels_detailed[cluster_id] = simple_label
         
-        # Add error bars
-        yerr = success_rates['std'] / np.sqrt(success_rates['count'])  # Standard error
-        ax2.errorbar(range(len(success_rates)), success_rates['mean'], 
-                    yerr=yerr, fmt='none', color='black', capsize=5)
+        # Add cluster labels to dataframe
+        df_exploded['cluster'] = cluster_labels
         
-        # Add value labels
-        for i, bar in enumerate(bars):
-            height = bar.get_height()
-            count = success_rates['count'].iloc[i]
-            ax2.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1%}\n(n={count})',
-                    ha='center', va='bottom')
+        # Function to generate distinct colors
+        def generate_colors(n):
+            """Generate n distinct colors using HSV color space"""
+            colors = []
+            for i in range(n):
+                hue = i / n
+                # Use high saturation and value for vivid colors
+                saturation = 0.7
+                value = 0.9
+                rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+                # Convert to hex
+                hex_color = '#{:02x}{:02x}{:02x}'.format(
+                    int(rgb[0] * 255),
+                    int(rgb[1] * 255),
+                    int(rgb[2] * 255)
+                )
+                colors.append(hex_color)
+            return colors
         
-        ax2.set_title('Success Rate by Decision Type')
-        ax2.set_ylabel('Success Rate')
-        ax2.set_ylim(0, 1)
-        ax2.set_xticks(range(len(success_rates)))
-        ax2.set_xticklabels(success_rates.index, rotation=45, ha='right')
-        ax2.grid(True, alpha=0.3)
+        # Get unique clusters (excluding -1) and generate colors
+        unique_clusters = sorted(list(set(cluster_labels)))
+        n_clusters = len(unique_clusters) - (1 if -1 in unique_clusters else 0)  # Exclude noise cluster
+        distinct_colors = generate_colors(n_clusters)
         
-        # 3. Success Rate Over Time
-        df_exploded['move_number'] = df_exploded.groupby('game_id').cumcount() + 1
-        window_size = 10
-        rolling_success = df_exploded.groupby('move_number')['successful_move'].mean().rolling(window=window_size).mean()
+        # Assign colors to remaining clusters
+        cluster_colors = {}
+        if -1 in unique_clusters:
+            cluster_colors[-1] = '#808080'  # Gray for noise/uncategorized
+            unique_clusters.remove(-1)
         
-        ax3.plot(rolling_success.index, rolling_success.values, 'b-', label=f'{window_size}-Move Average')
-        ax3.scatter(df_exploded['move_number'], df_exploded['successful_move'], 
-                   alpha=0.2, color='gray', label='Individual Moves')
-        ax3.set_title('Success Rate Over Time')
-        ax3.set_xlabel('Move Number')
-        ax3.set_ylabel('Success Rate')
-        ax3.grid(True, alpha=0.3)
-        ax3.legend()
+        # Assign colors to remaining clusters
+        for cluster, color in zip(unique_clusters, distinct_colors):
+            cluster_colors[cluster] = color
         
-        # 4. Decision Type Evolution
-        pivot_data = pd.crosstab(df_exploded['move_number'], df_exploded['decision_type'], normalize='index')
-        pivot_data.plot(kind='area', stacked=True, ax=ax4, alpha=0.7)
-        ax4.set_title('Decision Type Evolution')
-        ax4.set_xlabel('Move Number')
-        ax4.set_ylabel('Proportion')
-        ax4.grid(True, alpha=0.3)
-        ax4.legend(title='Decision Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+        # Create figure with 2x2 subplots for metrics analysis
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                'Distribution of Decision Strategies',
+                'Success Rate by Strategy',
+                'Strategy Evolution by Game',
+                'Strategy Success Rate by Game'
+            ),
+            specs=[
+                [{"type": "pie"}, {"type": "bar"}],
+                [{"type": "scatter"}, {"type": "scatter"}]
+            ],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.12  # Increased spacing between columns
+        )
         
-        # Print statistics if verbose
-        if self.verbose >= 2:
-            print("\nLLM Reasoning Statistics:")
-            print("\nDecision Type Distribution:")
-            print(decision_counts)
-            print("\nSuccess Rates by Decision Type:")
-            print(success_rates)
-            print("\nOverall Success Rate:", df_exploded['successful_move'].mean())
+        # 1. Distribution of Clusters (Pie Chart)
+        cluster_counts = df_exploded['cluster'].value_counts()
+        fig.add_trace(
+            go.Pie(
+                labels=[cluster_labels_simple[c] for c in cluster_counts.index],
+                values=cluster_counts.values,
+                hole=0.3,
+                textinfo='percent+label',
+                marker=dict(colors=[cluster_colors[c] for c in cluster_counts.index]),
+                name='Distribution',
+                legendgroup='distribution',
+                legendgrouptitle_text="Distribution of Strategies"
+            ),
+            row=1, col=1
+        )
         
-        plt.tight_layout()
-        suffix = f"_{plt_suffix}" if plt_suffix else ""
-        plt.savefig(f'{output_dir}/llm_reasoning{suffix}.png', dpi=300, bbox_inches='tight')
-        plt.close()
+        # 2. Success Rate by Cluster (Bar Chart)
+        success_by_cluster = df_exploded.groupby('cluster')['successful_move'].agg(['mean', 'count'])
+        fig.add_trace(
+            go.Bar(
+                x=[cluster_labels_simple[c] for c in success_by_cluster.index],
+                y=success_by_cluster['mean'],
+                text=[f"{count} decisions<br>{rate:.1%} success rate" 
+                     for rate, count in zip(success_by_cluster['mean'], success_by_cluster['count'])],
+                textposition='auto',
+                marker_color=[cluster_colors[c] for c in success_by_cluster.index],
+                name='Success Rate',
+                legendgroup='success_rate',
+                legendgrouptitle_text="Success Rate by Strategy",
+                showlegend=False  # Hide this since it's just one bar series
+            ),
+            row=1, col=2
+        )
+        
+        # 3. Strategy Evolution by Game
+        strategy_evolution = df_exploded.groupby(['game_id', 'cluster']).size().unstack(fill_value=0)
+        strategy_evolution_pct = strategy_evolution.div(strategy_evolution.sum(axis=1), axis=0)
+        
+        for cluster in strategy_evolution_pct.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=strategy_evolution_pct.index,
+                    y=strategy_evolution_pct[cluster] * 100,
+                    name=cluster_labels_detailed[cluster],  # Use detailed label here
+                    mode='lines+markers',
+                    line=dict(color=cluster_colors[cluster]),
+                    hovertemplate=f"Game %{{x}}<br>%{{y:.1f}}% of decisions",
+                    legendgroup='evolution',
+                    legendgrouptitle_text="Strategy Evolution"
+                ),
+                row=2, col=1
+            )
+        
+        # 4. Success Rate by Game and Strategy
+        success_by_game_strategy = df_exploded.groupby(['game_id', 'cluster'])['successful_move'].mean().unstack()
+        
+        for cluster in success_by_game_strategy.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=success_by_game_strategy.index,
+                    y=success_by_game_strategy[cluster] * 100,
+                    name=cluster_labels_detailed[cluster],  # Use detailed label here
+                    mode='lines+markers',
+                    line=dict(color=cluster_colors[cluster]),
+                    hovertemplate=f"Game %{{x}}<br>%{{y:.1f}}% success rate",
+                    legendgroup='success_evolution',
+                    legendgrouptitle_text="Success Rate Evolution"
+                ),
+                row=2, col=2
+            )
+        
+        # Update layout with better legend placement and sizing
+        fig.update_layout(
+            height=1000,
+            width=1800,  # Increased width
+            showlegend=True,
+            title_text="LLM Agent Decision Strategy Analysis",
+            title_x=0.5,
+            title_font_size=20,
+            legend=dict(
+                yanchor="top",
+                y=0.98,
+                xanchor="left",
+                x=1.02,
+                orientation="v",
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                bordercolor="rgba(0, 0, 0, 0.2)",
+                borderwidth=1,
+                tracegroupgap=30
+            ),
+            # Add margins to ensure nothing gets cut off
+            margin=dict(
+                l=50,   # left margin
+                r=250,  # right margin for legend
+                t=100,  # top margin
+                b=50    # bottom margin
+            )
+        )
+        
+        # Update axes labels and formatting
+        fig.update_yaxes(title_text="Percentage of Decisions", row=2, col=1)
+        fig.update_yaxes(title_text="Success Rate (%)", row=2, col=2)
+        fig.update_xaxes(title_text="Game Number", row=2, col=1)
+        fig.update_xaxes(title_text="Game Number", row=2, col=2)
+        
+        # Update subplot titles to be more descriptive
+        for i in range(len(fig.layout.annotations)):
+            fig.layout.annotations[i].font.size = 14
+        
+        # Update plot labels to use simple labels for axes and detailed labels for legend/hover
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(
+                title="Strategy Clusters",
+                orientation="v",
+                yanchor="top",
+                y=0.98,
+                xanchor="left",
+                x=1.02
+            )
+        )
 
-    def generate_reports(self, output_dir: str = 'reports', plt_suffix: str = ''):
+        # Update traces to use detailed labels in legend and hover, but simple labels on axes
+        for trace in fig.data:
+            if hasattr(trace, 'name') and trace.name in cluster_labels_with_category.values():
+                # Convert from detailed back to cluster ID
+                cluster_id = next(k for k, v in cluster_labels_with_category.items() if v == trace.name)
+                # Update to use detailed label in legend
+                trace.name = cluster_labels_detailed[cluster_id]
+                # Update hover template to show detailed information
+                if hasattr(trace, 'hovertemplate'):
+                    # Replace the current label with the simple label
+                    hover_text = trace.hovertemplate.replace(
+                        cluster_labels_with_category[cluster_id],
+                        cluster_labels_simple[cluster_id]
+                    )
+                    # Add strategy information to hover
+                    trace.hovertemplate = hover_text + f"<br>Strategy: {cluster_labels_detailed[cluster_id]}<extra></extra>"
+                    # Get the length of data from x or y values
+                    data_length = len(trace.x) if hasattr(trace, 'x') else len(trace.y)
+                    trace.customdata = [[cluster_labels_detailed[cluster_id]] for _ in range(data_length)]
+        
+        # Save metrics analysis plots
+        suffix = f"_{plt_suffix}" if plt_suffix else ""
+        pio.write_html(fig, f'{output_dir}/llm_reasoning_metrics{suffix}.html')
+        pio.write_image(fig, f'{output_dir}/llm_reasoning_metrics{suffix}.png')
+        
+        # Generate ReasoningAnalyzer visualizations
+        analyzer.render_visualizations(
+            summaries=summaries,
+            text_data=decision_types,
+            output_dir=output_dir,
+            filename_suffix=suffix
+        )
+        
+    def generate_reports(self, output_dir: str = 'reports', plt_suffix: str = '', from_file: str = ''):
         """Generate comprehensive performance reports"""
         import os
         
@@ -1071,7 +1269,14 @@ class SimulationMetrics:
             output_dir = os.path.join(output_dir, plt_suffix.strip('_'))
             os.makedirs(output_dir, exist_ok=True)
         
-        df = self.to_dataframe()
+        if from_file:
+            df = pd.read_csv(from_file)
+        else:
+            df = self.to_dataframe()
+            # Save the raw data to csv
+            df.to_csv(os.path.join(f'{output_dir}', 'raw_data.csv'), index=False)
+
+
         agent_types = sorted(df['agent_type'].unique())
         
         # Generate all plots
@@ -1156,7 +1361,7 @@ class SimulationMetrics:
         # Add value labels on bars
         for i, bar in enumerate(bars):
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2, height + 0.5,
+            ax.text(bar.get_x() + bar.get_width()/2 + 0.1, height + 0.5,
                    f'{height:.1f}%', ha='center', va='bottom', fontweight='bold')
         
         # Add legend for agent types

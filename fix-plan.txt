@@ -1,30 +1,19 @@
-Plot fix plan:
+1. Bluffing Behavior Plot
+   a. Let's please annotat the Call Bluff Rate as a Percentage! The annotation above the
+      bar should be 20%, not 0.2 for example.
 
-#1. Bluff Timing Plot: The concept behind this was relying on the average number of dice remaining when bluffing. 
-   However, in this variation of the game, we lose lives, not dice, when bluffing. So we always have 5 dice. 
-   We should instead track the number (quantity) of dice called in the previous round that caused this agent to bluff,
-   so we can see patterns in bluff timing. And/Or any other relevant metrics you can think of!
+2. Bid_patterns and Bid_Behavior plots.
+   a. The value labels are being overlapped by the vertical std deviation bars. Usually it splits
+      and covers up the decimal point of the annotation. Maybe there is an easy way to adjust this
+      to the left or right such that the annotation wont get overlapped.
 
-#2. Bluffing Behavior Plot: If it is easy to do, let's track the number of failed bluff calls per round as well.
+3. Individual Agent Metrics Plot
+   a. The Total Wins needs to be a percentage of total games won, not the count of games won!
+      The reason for this is that for simulations of thousands of games, the total Wins bars are
+      huge and then the other metrics get lost. 
 
-#3. Individual performance metrics: 
-   - It seems like we are not properly tracking the failed bluff calls, for the RandomAgent as this
-    value is always zero.
-    - Let's plot the wins as an average, not a total.
+4. Survival Time Plot.
+   a. Somehow, this plot is showing that the survival time for Agents is a negative number!
+      Obviously this makes no sense since each agent will survive at least one round no matter what.
+      Not sure what happened here, but this plot has lost all of it's meaninful value.
 
-#4. win rates plot: This is not properly aggregating the win rates by agent type. For example in the control_4random
-   test, we should see that the win rate is 100% for the RandomAgent, but we see 25%. 
-
-#5. Adaptive learning Plot: 
-   - Bluff threshhold line is basically flat at 0.8. Not sure if that is correct or not.
-   - Spacing is bad. The Main Title and the learning progression over time titles are overlapping.
-   - The annotated legend for recent prediction accuracy is outside the bounds of the top subplot. smae with the prediction accuracy annotated legend.
-
-#6. LLM Reasononing Plot: This is SO cool, however, the output of the LLM is stochastic, so we need a way
-of grouping together similar reasonings. 
-Ideas:
- -  Creaete embeddings for the reasoning output
- -  Use cosine similarity to group together similar reasonings.
- -  Not sure if a clustering algorithm like k-means would work, but it's a good idea to try. 
- -  Once we group together similar reasonings, we can take a random sample from each group and have an LLM summarize
-    them in to genearal 'decision types', which we can then use for our charts. 

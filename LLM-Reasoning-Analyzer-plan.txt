@@ -3,7 +3,8 @@ LLM Reasoning Analyzer Implementation Plan
 
 Overview
 --------
-This plan outlines the implementation of an advanced reasoning analysis system for the Liar's Dice LLM agent. The goal is to create meaningful categorizations of LLM reasoning patterns and visualize them effectively.
+This plan outlines the implementation of an advanced reasoning analysis system for the Liar's Dice LLM agent. 
+The goal is to create meaningful categorizations of LLM reasoning patterns and visualize them effectively.
 
 Dependencies
 -----------
